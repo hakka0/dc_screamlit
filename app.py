@@ -127,7 +127,6 @@ if not df.empty:
         with tab2:
             st.subheader("🔥 활동왕 랭킹 (Top 20)")
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
-            # 랭킹은 여전히 활동 많은 순서 유지
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
             
             st.dataframe(
@@ -138,19 +137,19 @@ if not df.empty:
                 hide_index=True, use_container_width=True
             )
 
-        # [Tab 3] 전체 유저 일람 (검색 & 커스텀 페이지네이션)
+        # [Tab 3] 전체 유저 일람 (검색 & 페이지네이션)
         with tab3:
             st.subheader("🔍 유저 검색 및 전체 목록")
 
             # 1. 유저별 데이터 집계
+            # '수집시간'은 max로 가져오긴 하지만, 나중에 표에서는 뺄 예정
             user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({
                 '작성글수': 'sum',
                 '작성댓글수': 'sum',
-                '총활동수': 'sum',
-                '수집시간': 'max'
-            }).reset_index().rename(columns={'수집시간': '최근활동시간'})
+                '총활동수': 'sum'
+            }).reset_index()
             
-            # [요청 반영] 닉네임 기준 오름차순(가나다순) 정렬
+            # 닉네임 기준 오름차순(가나다순) 정렬
             user_list_df = user_list_df.sort_values(by='닉네임', ascending=True)
 
             # 2. 검색 기능 (자동완성)
@@ -172,7 +171,7 @@ if not df.empty:
                     (user_list_df['ID(IP)'] == target_id)
                 ]
 
-            # 3. 커스텀 페이지네이션 (화살표 버튼 방식)
+            # 3. 커스텀 페이지네이션 (좌측 정보, 우측 버튼)
             if target_df.empty:
                 st.info("검색 결과가 없습니다.")
             else:
@@ -180,46 +179,47 @@ if not df.empty:
                 total_items = len(target_df)
                 total_pages = math.ceil(total_items / items_per_page)
 
-                # Session State로 현재 페이지 관리
+                # Session State 관리
                 if 'user_page' not in st.session_state:
                     st.session_state.user_page = 1
-                
-                # 데이터가 줄어들어서 현재 페이지가 전체 페이지보다 커지면 1페이지로 리셋
                 if st.session_state.user_page > total_pages:
                     st.session_state.user_page = 1
 
-                # 페이지 이동 버튼 영역
+                # [UI 수정] 레이아웃 비율 설정 (정보:공백:이전:다음 = 6:5:1:1)
                 if total_pages > 1:
-                    col_prev, col_info, col_next = st.columns([1, 4, 1])
+                    col_info, col_spacer, col_prev, col_next = st.columns([6, 5, 1, 1])
 
+                    # 왼쪽: 페이지 정보
+                    with col_info:
+                        st.markdown(f"**{st.session_state.user_page}** / {total_pages} 페이지 (총 {total_items}명)", unsafe_allow_html=True)
+                    
+                    # 오른쪽 끝: 버튼들
                     with col_prev:
                         if st.button("◀ 이전"):
                             if st.session_state.user_page > 1:
                                 st.session_state.user_page -= 1
-                                st.rerun() # 화면 즉시 갱신
+                                st.rerun()
                     
                     with col_next:
                         if st.button("다음 ▶"):
                             if st.session_state.user_page < total_pages:
                                 st.session_state.user_page += 1
-                                st.rerun() # 화면 즉시 갱신
-                                
-                    with col_info:
-                        # 가운데 정렬 느낌을 주기 위해 markdown 사용
-                        st.markdown(f"<div style='text-align: center; line-height: 2.3;'><b>{st.session_state.user_page}</b> / {total_pages} 페이지 (총 {total_items}명)</div>", unsafe_allow_html=True)
+                                st.rerun()
                 else:
                     st.write(f"총 {total_items}명")
 
-                # 데이터 슬라이싱 및 출력
+                # 데이터 슬라이싱
                 current_page = st.session_state.user_page
                 start_idx = (current_page - 1) * items_per_page
                 end_idx = start_idx + items_per_page
                 page_df = target_df.iloc[start_idx:end_idx]
 
+                # [UI 수정] 표시할 컬럼만 선택 ('최근활동시간' 제외)
+                display_columns = ['닉네임', 'ID(IP)', '유저타입', '작성글수', '작성댓글수', '총활동수']
+
                 st.dataframe(
-                    page_df,
+                    page_df[display_columns],
                     column_config={
-                        "최근활동시간": st.column_config.DatetimeColumn(format="D일 HH:mm"),
                         "총활동수": st.column_config.NumberColumn(format="%d회"),
                     },
                     hide_index=True,

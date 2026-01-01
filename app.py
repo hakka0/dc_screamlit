@@ -2,16 +2,19 @@ import streamlit as st
 import pandas as pd
 import boto3
 import io
-import datetime
+import math  # 페이지 계산용
 from botocore.config import Config
 
+# --- [설정] 페이지 기본 설정 ---
 st.set_page_config(page_title="갤러리 대시보드", layout="wide")
 
+# 레이아웃: 헤더와 필터 영역 분리
 st_header_col, st_space, st_date_col, st_time_col = st.columns([5, 1, 2, 3])
 
 with st_header_col:
     st.title("📊 갤러리 활동 대시보드")
 
+# --- [함수] Cloudflare R2에서 데이터 가져오기 ---
 @st.cache_data(ttl=300)
 def load_data_from_r2():
     try:
@@ -20,7 +23,7 @@ def load_data_from_r2():
         account_id = st.secrets["CF_ACCOUNT_ID"]
         bucket_name = st.secrets["CF_BUCKET_NAME"]
     except KeyError:
-        st.error("Secrets 설정 오류")
+        st.error("Secrets 설정 오류: Streamlit 관리자 페이지에서 키를 확인해주세요.")
         return pd.DataFrame()
 
     s3 = boto3.client(
@@ -61,12 +64,14 @@ def load_data_from_r2():
     final_df['수집시간'] = pd.to_datetime(final_df['수집시간'])
     return final_df
 
+# --- [메인] 데이터 처리 ---
 df = load_data_from_r2()
 
 if not df.empty:
     min_date = df['수집시간'].dt.date.min()
     max_date = df['수집시간'].dt.date.max()
 
+    # --- 우측 상단 필터 UI ---
     with st_date_col:
         selected_date = st.date_input(
             "📅 날짜 선택",
@@ -79,7 +84,7 @@ if not df.empty:
             0, 24, (0, 24), step=1, format="%d시"
         )
 
-    # 데이터 필터링
+    # --- 데이터 필터링 로직 ---
     day_filtered_df = df[df['수집시간'].dt.date == selected_date]
     
     if end_hour == 24:
@@ -93,45 +98,36 @@ if not df.empty:
     st.markdown("---")
 
     if filtered_df.empty:
-        st.warning(f"⚠️ {selected_date} 데이터가 없습니다.")
+        st.warning(f"⚠️ {selected_date} 해당 시간대에 데이터가 없습니다.")
     else:
-        # [수정됨] KPI 계산 (중복 제거된 순수 유저 수)
+        # --- KPI 지표 ---
         total_posts = filtered_df['작성글수'].sum()
         total_comments = filtered_df['작성댓글수'].sum()
-        
-        # 여기서 nunique()를 쓰면 해당 기간 내 중복 활동자는 1명으로 계산됨
         active_users = filtered_df['ID(IP)'].nunique()
 
         col1, col2, col3 = st.columns(3)
         col1.metric("📝 총 게시글", f"{total_posts:,}개")
         col2.metric("💬 총 댓글", f"{total_comments:,}개")
-        col3.metric("👥 순수 활동 유저", f"{active_users:,}명") # 라벨 변경
+        col3.metric("👥 순수 활동 유저", f"{active_users:,}명")
 
-        tab1, tab2, tab3 = st.tabs(["📈 시간대별 추이", "🏆 유저 랭킹", "🍰 유저 타입 비율"])
+        # --- 탭 구성 변경 ---
+        tab1, tab2, tab3 = st.tabs(["📈 시간대별 추이", "🏆 유저 랭킹", "👥 전체 유저 검색"])
 
+        # [Tab 1] 시간대별 추이
         with tab1:
             st.subheader(f"{selected_date} 시간대별 활동 지표")
-            
-            # [핵심 수정] 시간대별 집계 방식 변경
-            # ID(IP) 컬럼에 nunique 함수를 적용하여 중복 제거된 유저 수를 구함
             time_agg = filtered_df.groupby('수집시간').agg({
                 '작성글수': 'sum',
                 '작성댓글수': 'sum',
                 'ID(IP)': 'nunique'
             }).rename(columns={'ID(IP)': '활동유저수'})
-            
-            # 그래프 그리기
             st.line_chart(time_agg)
-            
-            # (옵션) 데이터프레임으로도 보여주기 (확인용)
-            with st.expander("상세 데이터 보기"):
-                st.dataframe(time_agg)
 
+        # [Tab 2] 활동왕 랭킹 (Top 20)
         with tab2:
             st.subheader("🔥 활동왕 랭킹 (Top 20)")
-            # 랭킹은 단순히 합산하면 되므로 기존 유지 (많이 활동한 사람이니까 중복 합산이 맞음)
-            user_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
-            top_users = user_df.sort_values(by='총활동수', ascending=False).head(20)
+            ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
+            top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
             
             st.dataframe(
                 top_users,
@@ -141,17 +137,87 @@ if not df.empty:
                 hide_index=True, use_container_width=True
             )
 
+        # [Tab 3] 전체 유저 일람 (검색 & 페이지네이션)
         with tab3:
-            st.subheader("📊 고닉 vs 유동 비율 (순수 유저 기준)")
-            # 유저 타입 비율도 '활동 횟수' 기준이 아니라 '사람 머릿수' 기준으로 보고 싶다면 아래처럼 수정
-            # 중복 제거 후 유저 타입 세기
-            unique_users = filtered_df.drop_duplicates(subset=['ID(IP)'])
-            type_counts = unique_users['유저타입'].value_counts()
+            st.subheader("🔍 유저 검색 및 전체 목록")
+
+            # 1. 유저별 데이터 집계 (중복 제거 및 통계)
+            # 유저의 마지막 활동 시간도 같이 보여주기 위해 'max' 사용
+            user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({
+                '작성글수': 'sum',
+                '작성댓글수': 'sum',
+                '총활동수': 'sum',
+                '수집시간': 'max' # 마지막 활동 시간
+            }).reset_index().rename(columns={'수집시간': '최근활동시간'})
             
-            # 만약 활동량(글+댓글) 기준 비율을 보고 싶다면 아래 주석 해제 후 위 2줄 주석 처리
-            # type_counts = filtered_df['유저타입'].value_counts()
+            # 활동 많은 순으로 정렬
+            user_list_df = user_list_df.sort_values(by='총활동수', ascending=False)
+
+            # 2. 검색 기능 (자동완성)
+            # 검색용 리스트 생성 (닉네임 + ID 조합)
+            search_options = [f"{row['닉네임']} ({row['ID(IP)']})" for index, row in user_list_df.iterrows()]
             
-            st.bar_chart(type_counts)
+            # Selectbox를 검색창처럼 사용 (placeholder 역할로 빈 문자열 추가)
+            search_query = st.selectbox(
+                "👤 유저 검색 (닉네임이나 ID를 입력하면 자동완성 됩니다)",
+                options=[""] + search_options,
+                index=0
+            )
+
+            # 검색 로직
+            target_df = user_list_df # 기본은 전체 목록
+            if search_query != "":
+                # "닉네임 (ID)" 형식에서 ID 추출하여 필터링하거나, 선택된 항목만 보여줌
+                # 여기서는 간단하게 선택된 문자열과 일치하는 행을 찾습니다.
+                # 닉네임과 ID 중 하나라도 매칭되는지 확인 (사실 selectbox라 정확히 매칭됨)
+                target_nick = search_query.split(" (")[0]
+                target_id = search_query.split(" (")[-1].replace(")", "")
+                
+                target_df = user_list_df[
+                    (user_list_df['닉네임'] == target_nick) & 
+                    (user_list_df['ID(IP)'] == target_id)
+                ]
+
+            # 3. 페이지네이션 (Pagination)
+            if target_df.empty:
+                st.info("검색 결과가 없습니다.")
+            else:
+                items_per_page = 15
+                total_items = len(target_df)
+                total_pages = math.ceil(total_items / items_per_page)
+
+                # 페이지 컨트롤러 (데이터가 많을 때만 표시)
+                if total_pages > 1:
+                    col_pg1, col_pg2 = st.columns([1, 4])
+                    with col_pg1:
+                        current_page = st.number_input(
+                            "페이지 선택", 
+                            min_value=1, 
+                            max_value=total_pages, 
+                            value=1,
+                            step=1
+                        )
+                    with col_pg2:
+                        st.write(f"총 {total_items}명 중 {(current_page-1)*items_per_page + 1} ~ {min(current_page*items_per_page, total_items)}명 표시 (총 {total_pages} 페이지)")
+                else:
+                    current_page = 1
+                    st.write(f"총 {total_items}명 검색됨")
+
+                # 데이터 슬라이싱
+                start_idx = (current_page - 1) * items_per_page
+                end_idx = start_idx + items_per_page
+                page_df = target_df.iloc[start_idx:end_idx]
+
+                # 최종 테이블 출력
+                st.dataframe(
+                    page_df,
+                    column_config={
+                        "최근활동시간": st.column_config.DatetimeColumn(format="D일 HH:mm"),
+                        "총활동수": st.column_config.NumberColumn(format="%d회"),
+                    },
+                    hide_index=True,
+                    use_container_width=True
+                )
 
 else:
-    st.info("데이터 로딩 중...")
+    st.info("데이터 로딩 중... (데이터가 없거나 R2 연결을 확인해주세요)")

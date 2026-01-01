@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import boto3
 import io
-import math  # 페이지 계산용
+import math
 from botocore.config import Config
 
 # --- [설정] 페이지 기본 설정 ---
@@ -110,7 +110,7 @@ if not df.empty:
         col2.metric("💬 총 댓글", f"{total_comments:,}개")
         col3.metric("👥 순수 활동 유저", f"{active_users:,}명")
 
-        # --- 탭 구성 변경 ---
+        # --- 탭 구성 ---
         tab1, tab2, tab3 = st.tabs(["📈 시간대별 추이", "🏆 유저 랭킹", "👥 전체 유저 검색"])
 
         # [Tab 1] 시간대별 추이
@@ -127,6 +127,7 @@ if not df.empty:
         with tab2:
             st.subheader("🔥 활동왕 랭킹 (Top 20)")
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
+            # 랭킹은 여전히 활동 많은 순서 유지
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
             
             st.dataframe(
@@ -137,27 +138,24 @@ if not df.empty:
                 hide_index=True, use_container_width=True
             )
 
-        # [Tab 3] 전체 유저 일람 (검색 & 페이지네이션)
+        # [Tab 3] 전체 유저 일람 (검색 & 커스텀 페이지네이션)
         with tab3:
             st.subheader("🔍 유저 검색 및 전체 목록")
 
-            # 1. 유저별 데이터 집계 (중복 제거 및 통계)
-            # 유저의 마지막 활동 시간도 같이 보여주기 위해 'max' 사용
+            # 1. 유저별 데이터 집계
             user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({
                 '작성글수': 'sum',
                 '작성댓글수': 'sum',
                 '총활동수': 'sum',
-                '수집시간': 'max' # 마지막 활동 시간
+                '수집시간': 'max'
             }).reset_index().rename(columns={'수집시간': '최근활동시간'})
             
-            # 활동 많은 순으로 정렬
-            user_list_df = user_list_df.sort_values(by='총활동수', ascending=False)
+            # [요청 반영] 닉네임 기준 오름차순(가나다순) 정렬
+            user_list_df = user_list_df.sort_values(by='닉네임', ascending=True)
 
             # 2. 검색 기능 (자동완성)
-            # 검색용 리스트 생성 (닉네임 + ID 조합)
             search_options = [f"{row['닉네임']} ({row['ID(IP)']})" for index, row in user_list_df.iterrows()]
             
-            # Selectbox를 검색창처럼 사용 (placeholder 역할로 빈 문자열 추가)
             search_query = st.selectbox(
                 "👤 유저 검색 (닉네임이나 ID를 입력하면 자동완성 됩니다)",
                 options=[""] + search_options,
@@ -165,20 +163,16 @@ if not df.empty:
             )
 
             # 검색 로직
-            target_df = user_list_df # 기본은 전체 목록
+            target_df = user_list_df
             if search_query != "":
-                # "닉네임 (ID)" 형식에서 ID 추출하여 필터링하거나, 선택된 항목만 보여줌
-                # 여기서는 간단하게 선택된 문자열과 일치하는 행을 찾습니다.
-                # 닉네임과 ID 중 하나라도 매칭되는지 확인 (사실 selectbox라 정확히 매칭됨)
                 target_nick = search_query.split(" (")[0]
                 target_id = search_query.split(" (")[-1].replace(")", "")
-                
                 target_df = user_list_df[
                     (user_list_df['닉네임'] == target_nick) & 
                     (user_list_df['ID(IP)'] == target_id)
                 ]
 
-            # 3. 페이지네이션 (Pagination)
+            # 3. 커스텀 페이지네이션 (화살표 버튼 방식)
             if target_df.empty:
                 st.info("검색 결과가 없습니다.")
             else:
@@ -186,29 +180,42 @@ if not df.empty:
                 total_items = len(target_df)
                 total_pages = math.ceil(total_items / items_per_page)
 
-                # 페이지 컨트롤러 (데이터가 많을 때만 표시)
-                if total_pages > 1:
-                    col_pg1, col_pg2 = st.columns([1, 4])
-                    with col_pg1:
-                        current_page = st.number_input(
-                            "페이지 선택", 
-                            min_value=1, 
-                            max_value=total_pages, 
-                            value=1,
-                            step=1
-                        )
-                    with col_pg2:
-                        st.write(f"총 {total_items}명 중 {(current_page-1)*items_per_page + 1} ~ {min(current_page*items_per_page, total_items)}명 표시 (총 {total_pages} 페이지)")
-                else:
-                    current_page = 1
-                    st.write(f"총 {total_items}명 검색됨")
+                # Session State로 현재 페이지 관리
+                if 'user_page' not in st.session_state:
+                    st.session_state.user_page = 1
+                
+                # 데이터가 줄어들어서 현재 페이지가 전체 페이지보다 커지면 1페이지로 리셋
+                if st.session_state.user_page > total_pages:
+                    st.session_state.user_page = 1
 
-                # 데이터 슬라이싱
+                # 페이지 이동 버튼 영역
+                if total_pages > 1:
+                    col_prev, col_info, col_next = st.columns([1, 4, 1])
+
+                    with col_prev:
+                        if st.button("◀ 이전"):
+                            if st.session_state.user_page > 1:
+                                st.session_state.user_page -= 1
+                                st.rerun() # 화면 즉시 갱신
+                    
+                    with col_next:
+                        if st.button("다음 ▶"):
+                            if st.session_state.user_page < total_pages:
+                                st.session_state.user_page += 1
+                                st.rerun() # 화면 즉시 갱신
+                                
+                    with col_info:
+                        # 가운데 정렬 느낌을 주기 위해 markdown 사용
+                        st.markdown(f"<div style='text-align: center; line-height: 2.3;'><b>{st.session_state.user_page}</b> / {total_pages} 페이지 (총 {total_items}명)</div>", unsafe_allow_html=True)
+                else:
+                    st.write(f"총 {total_items}명")
+
+                # 데이터 슬라이싱 및 출력
+                current_page = st.session_state.user_page
                 start_idx = (current_page - 1) * items_per_page
                 end_idx = start_idx + items_per_page
                 page_df = target_df.iloc[start_idx:end_idx]
 
-                # 최종 테이블 출력
                 st.dataframe(
                     page_df,
                     column_config={

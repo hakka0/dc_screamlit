@@ -5,19 +5,19 @@ import io
 import math
 from botocore.config import Config
 
-# --- [설정] 페이지 기본 설정 및 CSS 해킹 ---
+# --- [설정] 페이지 기본 설정 ---
 st.set_page_config(page_title="갤러리 대시보드", layout="wide")
 
-# [CSS 추가] 데이터프레임 우측 상단 툴바 제거 & 탭 포커스 유지 튜닝
+# [CSS 주입] 데이터프레임 툴바(오른쪽 위 메뉴) 숨기기 & 라디오 버튼 스타일링
 st.markdown("""
     <style>
-        /* 데이터프레임 툴바(검색, CSV다운로드 등) 숨기기 */
+        /* 데이터프레임 툴바 숨기기 */
         [data-testid="stElementToolbar"] {
             display: none;
         }
-        /* 버튼 정렬 미세 조정 */
-        div.stButton > button {
-            width: 100%;
+        /* 라디오 버튼을 탭 메뉴처럼 보이게 (선택적) */
+        div[role="radiogroup"] > label > div:first-of-type {
+            display: none;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -123,12 +123,30 @@ if not df.empty:
         col1.metric("📝 총 게시글", f"{total_posts:,}개")
         col2.metric("💬 총 댓글", f"{total_comments:,}개")
         col3.metric("👥 순수 활동 유저", f"{active_users:,}명")
+        
+        st.markdown("---")
 
-        # --- 탭 구성 ---
-        tab1, tab2, tab3 = st.tabs(["📈 시간대별 추이", "🏆 유저 랭킹", "👥 전체 유저 검색"])
+        # --- [중요] 탭 대신 라디오 버튼을 사용하여 상태 유지 ---
+        # 탭은 리로드 시 초기화되므로, session_state와 radio 버튼을 사용합니다.
+        if 'active_tab' not in st.session_state:
+            st.session_state.active_tab = "📈 시간대별 추이"
 
-        # [Tab 1] 시간대별 추이
-        with tab1:
+        # 메뉴 선택 (가로형)
+        selected_tab = st.radio(
+            "메뉴 선택",
+            ["📈 시간대별 추이", "🏆 유저 랭킹", "👥 전체 유저 검색"],
+            horizontal=True,
+            index=["📈 시간대별 추이", "🏆 유저 랭킹", "👥 전체 유저 검색"].index(st.session_state.active_tab),
+            label_visibility="collapsed" # 라벨 숨김 (깔끔하게)
+        )
+        
+        # 선택된 값을 세션에 저장 (이래야 리로드 되어도 유지됨)
+        st.session_state.active_tab = selected_tab
+
+        st.markdown(" ") # 여백 추가
+
+        # --- [Tab 1] 시간대별 추이 ---
+        if selected_tab == "📈 시간대별 추이":
             st.subheader(f"{selected_date} 시간대별 활동 지표")
             time_agg = filtered_df.groupby('수집시간').agg({
                 '작성글수': 'sum',
@@ -137,8 +155,8 @@ if not df.empty:
             }).rename(columns={'ID(IP)': '활동유저수'})
             st.line_chart(time_agg)
 
-        # [Tab 2] 활동왕 랭킹 (Top 20)
-        with tab2:
+        # --- [Tab 2] 활동왕 랭킹 ---
+        elif selected_tab == "🏆 유저 랭킹":
             st.subheader("🔥 활동왕 랭킹 (Top 20)")
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
@@ -151,8 +169,8 @@ if not df.empty:
                 hide_index=True, use_container_width=True
             )
 
-        # [Tab 3] 전체 유저 일람 (검색 개선 & 메뉴 숨김)
-        with tab3:
+        # --- [Tab 3] 전체 유저 일람 (검색 & 커스텀 페이지네이션) ---
+        elif selected_tab == "👥 전체 유저 검색":
             st.subheader("🔍 유저 검색 및 전체 목록")
 
             # 1. 유저 데이터 집계
@@ -161,36 +179,48 @@ if not df.empty:
                 '작성댓글수': 'sum',
                 '총활동수': 'sum'
             }).reset_index()
+            
             user_list_df = user_list_df.sort_values(by='닉네임', ascending=True)
 
-            # 2. [수정됨] 검색 UI 개선 (라디오 버튼 + 텍스트 입력)
+            # 2. 검색 설정 (닉네임 vs ID)
+            # 검색창과 검색 기준을 나란히 배치
             col_search_type, col_search_input = st.columns([1, 4])
             
             with col_search_type:
+                # 라디오 버튼으로 검색 기준 선택
                 search_type = st.radio(
                     "검색 기준",
-                    ["닉네임", "ID"],
-                    horizontal=True,
-                    label_visibility="collapsed" # 공간 절약을 위해 라벨 숨김
+                    ["닉네임", "ID(IP)"],
+                    horizontal=True
                 )
-            
+
             with col_search_input:
-                search_text = st.text_input(
-                    "검색어 입력",
-                    placeholder=f"{search_type}을(를) 입력하세요 (일부만 입력해도 검색됨)",
-                    label_visibility="collapsed"
+                # 검색 기준에 따라 자동완성 목록 생성
+                if search_type == "닉네임":
+                    # 닉네임 목록 (중복 제거)
+                    options = [""] + sorted(user_list_df['닉네임'].unique().tolist())
+                    help_text = "닉네임을 입력하세요."
+                else:
+                    # ID 목록 (중복 제거)
+                    options = [""] + sorted(user_list_df['ID(IP)'].unique().tolist())
+                    help_text = "ID(IP)를 입력하세요."
+
+                search_query = st.selectbox(
+                    f"검색어 입력 ({search_type})",
+                    options=options,
+                    index=0,
+                    help=help_text
                 )
 
-            # 3. 검색 필터링 로직 (부분 일치 검색)
+            # 3. 검색 필터링 로직
             target_df = user_list_df
-            if search_text:
+            if search_query != "":
                 if search_type == "닉네임":
-                    # str.contains로 부분 일치 검색 (case=False: 대소문자 구분 안 함)
-                    target_df = user_list_df[user_list_df['닉네임'].astype(str).str.contains(search_text, case=False, na=False)]
+                    target_df = user_list_df[user_list_df['닉네임'] == search_query]
                 else:
-                    target_df = user_list_df[user_list_df['ID(IP)'].astype(str).str.contains(search_text, case=False, na=False)]
+                    target_df = user_list_df[user_list_df['ID(IP)'] == search_query]
 
-            # 4. 페이지네이션 UI
+            # 4. 커스텀 페이지네이션
             if target_df.empty:
                 st.info("검색 결과가 없습니다.")
             else:
@@ -198,14 +228,13 @@ if not df.empty:
                 total_items = len(target_df)
                 total_pages = math.ceil(total_items / items_per_page)
 
+                # Session State 관리
                 if 'user_page' not in st.session_state:
                     st.session_state.user_page = 1
-                
-                # 검색 결과가 바뀌어서 페이지가 줄어들면 1페이지로 리셋
                 if st.session_state.user_page > total_pages:
                     st.session_state.user_page = 1
 
-                # 상단 페이지 컨트롤러
+                # 레이아웃 비율
                 if total_pages > 1:
                     col_info, col_prev, col_next = st.columns([8.5, 0.75, 0.75])
 
@@ -226,7 +255,7 @@ if not df.empty:
                 else:
                     st.write(f"총 {total_items}명")
 
-                # 데이터 출력
+                # 데이터 슬라이싱
                 current_page = st.session_state.user_page
                 start_idx = (current_page - 1) * items_per_page
                 end_idx = start_idx + items_per_page

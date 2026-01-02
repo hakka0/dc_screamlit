@@ -5,8 +5,22 @@ import io
 import math
 from botocore.config import Config
 
-# --- [설정] 페이지 기본 설정 ---
+# --- [설정] 페이지 기본 설정 및 CSS 해킹 ---
 st.set_page_config(page_title="갤러리 대시보드", layout="wide")
+
+# [CSS 추가] 데이터프레임 우측 상단 툴바 제거 & 탭 포커스 유지 튜닝
+st.markdown("""
+    <style>
+        /* 데이터프레임 툴바(검색, CSV다운로드 등) 숨기기 */
+        [data-testid="stElementToolbar"] {
+            display: none;
+        }
+        /* 버튼 정렬 미세 조정 */
+        div.stButton > button {
+            width: 100%;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
 # 레이아웃: 헤더와 필터 영역 분리
 st_header_col, st_space, st_date_col, st_time_col = st.columns([5, 1, 2, 3])
@@ -137,40 +151,46 @@ if not df.empty:
                 hide_index=True, use_container_width=True
             )
 
-        # [Tab 3] 전체 유저 일람 (검색 & 페이지네이션)
+        # [Tab 3] 전체 유저 일람 (검색 개선 & 메뉴 숨김)
         with tab3:
             st.subheader("🔍 유저 검색 및 전체 목록")
 
-            # 1. 유저별 데이터 집계
+            # 1. 유저 데이터 집계
             user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({
                 '작성글수': 'sum',
                 '작성댓글수': 'sum',
                 '총활동수': 'sum'
             }).reset_index()
-            
-            # 닉네임 기준 오름차순(가나다순) 정렬
             user_list_df = user_list_df.sort_values(by='닉네임', ascending=True)
 
-            # 2. 검색 기능
-            search_options = [f"{row['닉네임']} ({row['ID(IP)']})" for index, row in user_list_df.iterrows()]
+            # 2. [수정됨] 검색 UI 개선 (라디오 버튼 + 텍스트 입력)
+            col_search_type, col_search_input = st.columns([1, 4])
             
-            search_query = st.selectbox(
-                "👤 유저 검색 (닉네임이나 ID를 입력하면 자동완성 됩니다)",
-                options=[""] + search_options,
-                index=0
-            )
+            with col_search_type:
+                search_type = st.radio(
+                    "검색 기준",
+                    ["닉네임", "ID"],
+                    horizontal=True,
+                    label_visibility="collapsed" # 공간 절약을 위해 라벨 숨김
+                )
+            
+            with col_search_input:
+                search_text = st.text_input(
+                    "검색어 입력",
+                    placeholder=f"{search_type}을(를) 입력하세요 (일부만 입력해도 검색됨)",
+                    label_visibility="collapsed"
+                )
 
-            # 검색 필터링
+            # 3. 검색 필터링 로직 (부분 일치 검색)
             target_df = user_list_df
-            if search_query != "":
-                target_nick = search_query.split(" (")[0]
-                target_id = search_query.split(" (")[-1].replace(")", "")
-                target_df = user_list_df[
-                    (user_list_df['닉네임'] == target_nick) & 
-                    (user_list_df['ID(IP)'] == target_id)
-                ]
+            if search_text:
+                if search_type == "닉네임":
+                    # str.contains로 부분 일치 검색 (case=False: 대소문자 구분 안 함)
+                    target_df = user_list_df[user_list_df['닉네임'].astype(str).str.contains(search_text, case=False, na=False)]
+                else:
+                    target_df = user_list_df[user_list_df['ID(IP)'].astype(str).str.contains(search_text, case=False, na=False)]
 
-            # 3. 커스텀 페이지네이션 (버튼 밀착 배치)
+            # 4. 페이지네이션 UI
             if target_df.empty:
                 st.info("검색 결과가 없습니다.")
             else:
@@ -178,30 +198,26 @@ if not df.empty:
                 total_items = len(target_df)
                 total_pages = math.ceil(total_items / items_per_page)
 
-                # Session State 관리
                 if 'user_page' not in st.session_state:
                     st.session_state.user_page = 1
+                
+                # 검색 결과가 바뀌어서 페이지가 줄어들면 1페이지로 리셋
                 if st.session_state.user_page > total_pages:
                     st.session_state.user_page = 1
 
-                # [수정됨] 레이아웃 비율 조정 (8.5 : 0.75 : 0.75)
-                # 텍스트(8.5)가 공간을 대부분 차지하고, 버튼(0.75)들을 오른쪽 끝으로 밀어냅니다.
-                # 버튼들의 컬럼 크기가 작아서 서로 가까이 붙게 됩니다.
+                # 상단 페이지 컨트롤러
                 if total_pages > 1:
                     col_info, col_prev, col_next = st.columns([8.5, 0.75, 0.75])
 
-                    # 왼쪽: 페이지 정보 (수직 중앙 정렬 느낌을 위해 line-height 추가)
                     with col_info:
                         st.markdown(f"<div style='padding-top: 5px;'><b>{st.session_state.user_page}</b> / {total_pages} 페이지 (총 {total_items}명)</div>", unsafe_allow_html=True)
                     
-                    # 오른쪽 끝: 이전 버튼
                     with col_prev:
                         if st.button("◀ 이전", use_container_width=True):
                             if st.session_state.user_page > 1:
                                 st.session_state.user_page -= 1
                                 st.rerun()
                     
-                    # 오른쪽 끝: 다음 버튼
                     with col_next:
                         if st.button("다음 ▶", use_container_width=True):
                             if st.session_state.user_page < total_pages:
@@ -210,13 +226,12 @@ if not df.empty:
                 else:
                     st.write(f"총 {total_items}명")
 
-                # 데이터 슬라이싱
+                # 데이터 출력
                 current_page = st.session_state.user_page
                 start_idx = (current_page - 1) * items_per_page
                 end_idx = start_idx + items_per_page
                 page_df = target_df.iloc[start_idx:end_idx]
 
-                # '최근활동시간' 제외하고 표시
                 display_columns = ['닉네임', 'ID(IP)', '유저타입', '작성글수', '작성댓글수', '총활동수']
 
                 st.dataframe(

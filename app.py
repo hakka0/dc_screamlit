@@ -8,33 +8,55 @@ from botocore.config import Config
 # --- [설정] 페이지 기본 설정 ---
 st.set_page_config(page_title="갤러리 대시보드", layout="wide")
 
-# --- [CSS 주입] UI 디자인 개선 ---
+# --- [CSS 주입] 버튼 스타일링 & UI 개선 ---
 st.markdown("""
     <style>
         /* 1. 데이터프레임 툴바 숨기기 */
         [data-testid="stElementToolbar"] {
             display: none;
         }
+
+        /* 2. [메뉴 선택] 라디오 버튼을 '토글 버튼'처럼 꾸미기 */
+        /* 기본 라디오 버튼 동그라미 숨김 */
+        div[role="radiogroup"] label > div:first-child {
+            display: none !important;
+        }
         
-        /* 2. 라디오 버튼(메뉴 & 검색기준) 디자인 개선 */
-        /* 라디오 버튼 그룹 전체에 박스 스타일 적용 */
-        div[role="radiogroup"] {
-            background-color: #f8f9fa; /* 연한 회색 배경 */
-            padding: 10px;
-            border-radius: 8px;
-            border: 1px solid #dee2e6; /* 테두리 추가 */
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05); /* 살짝 그림자 */
+        /* 버튼 기본 스타일 (비활성 상태) */
+        div[role="radiogroup"] label {
+            background-color: #ffffff;
+            padding: 10px 20px !important; /* 내부 여백 */
+            border-radius: 8px !important;
+            border: 1px solid #e0e0e0;
+            margin-right: 10px;
+            transition: all 0.2s;
+            justify-content: center; /* 텍스트 가운데 정렬 */
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        
+        /* 마우스 올렸을 때 (Hover) */
+        div[role="radiogroup"] label:hover {
+            border-color: #333;
+            background-color: #f8f9fa;
         }
 
-        /* 3. 검색창(Selectbox) 디자인 통일감을 위한 조정 */
-        /* Selectbox 컨테이너도 높이를 맞춰줌 */
-        div[data-testid="stSelectbox"] > div > div {
-            min-height: 46px; /* 라디오 버튼 높이와 얼추 맞춤 */
+        /* [핵심] 선택된 버튼 스타일 (검은색 배경) */
+        /* :has(input:checked)는 최신 브라우저에서 작동하는 강력한 선택자입니다 */
+        div[role="radiogroup"] label:has(input:checked) {
+            background-color: #333333 !important; /* 진한 회색/검정 배경 */
+            border-color: #333333 !important;
+            color: white !important;
         }
         
-        /* 4. 라디오 버튼 선택 항목 강조 */
-        div[role="radiogroup"] label {
-            font-weight: 500;
+        /* 선택된 버튼 안의 텍스트 색상도 흰색으로 강제 변경 */
+        div[role="radiogroup"] label:has(input:checked) p {
+            color: white !important;
+            font-weight: bold;
+        }
+
+        /* 3. 검색창 높이 맞추기용 */
+        div[data-testid="stSelectbox"] > div > div {
+            min-height: 46px;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -128,13 +150,14 @@ if not df.empty:
 
     st.markdown("---")
 
-    # --- [메인 메뉴] 디자인 개선됨 (CSS 적용) ---
+    # --- [메인 메뉴] 버튼형 라디오 버튼 ---
+    # CSS 덕분에 이제 버튼처럼 보임
     selected_tab = st.radio(
-        "메뉴 선택", # CSS로 외곽선이 생겨서 이제 라벨이 있어도 어색하지 않음 (필요 없으면 label_visibility="collapsed")
+        "메뉴 선택", 
         ["📈 시간대별 추이", "🏆 유저 랭킹", "👥 전체 유저 검색"],
         horizontal=True,
         key="main_menu",
-        label_visibility="collapsed" # 박스 디자인을 위해 라벨 숨김
+        label_visibility="collapsed"
     )
     
     st.markdown(" ") # 여백
@@ -144,7 +167,6 @@ if not df.empty:
     else:
         # --- [Tab 1] 시간대별 추이 ---
         if selected_tab == "📈 시간대별 추이":
-            # KPI 지표 (여기로 이동)
             total_posts = filtered_df['작성글수'].sum()
             total_comments = filtered_df['작성댓글수'].sum()
             active_users = filtered_df['ID(IP)'].nunique()
@@ -188,31 +210,25 @@ if not df.empty:
             }).reset_index()
             user_list_df = user_list_df.sort_values(by='닉네임', ascending=True)
 
-            # --- [UI 개선] 검색 레이아웃 정렬 맞추기 ---
-            # 1. 라벨(텍스트) 줄과 입력(버튼/박스) 줄을 물리적으로 분리하지 않고
-            #    st.columns 안에서 라벨을 markdown으로 따로 찍고
-            #    입력 도구는 label_visibility="collapsed"로 하여 높이를 맞춤
-            
-            col_search_type, col_search_input = st.columns([1.2, 4]) # 비율 미세 조정
+            # 검색 UI 레이아웃
+            col_search_type, col_search_input = st.columns([1.2, 4])
             
             def clear_search_box():
                 if 'user_search_box' in st.session_state:
                     st.session_state.user_search_box = None
 
-            # [왼쪽 컬럼] 검색 기준
             with col_search_type:
-                st.markdown("**검색 기준**") # 라벨을 텍스트로 직접 표시 (정렬을 위해)
+                st.markdown("**검색 기준**")
+                # 검색 기준 라디오 버튼 (이것도 위 CSS 영향을 받아 버튼처럼 보임 - 통일감)
                 search_type = st.radio(
-                    "검색 기준 라벨(숨김)", # 실제 라벨은 숨김
+                    "검색 기준 라벨(숨김)",
                     ["닉네임", "ID(IP)"],
                     horizontal=True,
                     on_change=clear_search_box,
-                    label_visibility="collapsed" # 높이 맞추기 위해 숨김
+                    label_visibility="collapsed"
                 )
 
-            # [오른쪽 컬럼] 검색어 입력
             with col_search_input:
-                # 라벨 텍스트 표시
                 if search_type == "닉네임":
                     st.markdown("**닉네임 검색** (자동완성)")
                     options = user_list_df['닉네임'].unique().tolist()
@@ -222,17 +238,16 @@ if not df.empty:
                     options = user_list_df['ID(IP)'].unique().tolist()
                     placeholder_text = "ID(IP)를 입력하세요"
 
-                # 입력 박스 (라벨 숨김)
                 search_query = st.selectbox(
                     label="검색어 입력(숨김)",
                     options=options,
                     index=None,
                     placeholder=placeholder_text,
                     key="user_search_box",
-                    label_visibility="collapsed" # 높이 맞추기 위해 숨김
+                    label_visibility="collapsed"
                 )
 
-            # 3. 검색 필터링
+            # 검색 로직
             target_df = user_list_df
             if search_query:
                 if search_type == "닉네임":
@@ -240,7 +255,7 @@ if not df.empty:
                 else:
                     target_df = user_list_df[user_list_df['ID(IP)'] == search_query]
 
-            # 4. 페이지네이션
+            # 페이지네이션
             if target_df.empty:
                 st.info("검색 결과가 없습니다.")
             else:

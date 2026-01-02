@@ -8,16 +8,33 @@ from botocore.config import Config
 # --- [설정] 페이지 기본 설정 ---
 st.set_page_config(page_title="갤러리 대시보드", layout="wide")
 
-# [CSS 주입] 데이터프레임 툴바 숨기기 & 라디오 버튼 스타일링
+# --- [CSS 주입] UI 디자인 개선 ---
 st.markdown("""
     <style>
-        /* 데이터프레임 툴바(점3개, 돋보기 등) 숨기기 */
+        /* 1. 데이터프레임 툴바 숨기기 */
         [data-testid="stElementToolbar"] {
             display: none;
         }
-        /* 라디오 버튼을 탭 메뉴처럼 보이게 조정 */
-        div[role="radiogroup"] > label > div:first-of-type {
-            display: none;
+        
+        /* 2. 라디오 버튼(메뉴 & 검색기준) 디자인 개선 */
+        /* 라디오 버튼 그룹 전체에 박스 스타일 적용 */
+        div[role="radiogroup"] {
+            background-color: #f8f9fa; /* 연한 회색 배경 */
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #dee2e6; /* 테두리 추가 */
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05); /* 살짝 그림자 */
+        }
+
+        /* 3. 검색창(Selectbox) 디자인 통일감을 위한 조정 */
+        /* Selectbox 컨테이너도 높이를 맞춰줌 */
+        div[data-testid="stSelectbox"] > div > div {
+            min-height: 46px; /* 라디오 버튼 높이와 얼추 맞춤 */
+        }
+        
+        /* 4. 라디오 버튼 선택 항목 강조 */
+        div[role="radiogroup"] label {
+            font-weight: 500;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -111,36 +128,33 @@ if not df.empty:
 
     st.markdown("---")
 
+    # --- [메인 메뉴] 디자인 개선됨 (CSS 적용) ---
+    selected_tab = st.radio(
+        "메뉴 선택", # CSS로 외곽선이 생겨서 이제 라벨이 있어도 어색하지 않음 (필요 없으면 label_visibility="collapsed")
+        ["📈 시간대별 추이", "🏆 유저 랭킹", "👥 전체 유저 검색"],
+        horizontal=True,
+        key="main_menu",
+        label_visibility="collapsed" # 박스 디자인을 위해 라벨 숨김
+    )
+    
+    st.markdown(" ") # 여백
+
     if filtered_df.empty:
         st.warning(f"⚠️ {selected_date} 해당 시간대에 데이터가 없습니다.")
     else:
-        # --- KPI 지표 ---
-        total_posts = filtered_df['작성글수'].sum()
-        total_comments = filtered_df['작성댓글수'].sum()
-        active_users = filtered_df['ID(IP)'].nunique()
-
-        col1, col2, col3 = st.columns(3)
-        col1.metric("📝 총 게시글", f"{total_posts:,}개")
-        col2.metric("💬 총 댓글", f"{total_comments:,}개")
-        col3.metric("👥 순수 활동 유저", f"{active_users:,}명")
-        
-        st.markdown("---")
-
-        # --- [핵심 수정 1] 메인 메뉴 상태 관리 (튕김 방지) ---
-        # key="main_menu"를 사용하여 Streamlit이 자동으로 상태를 기억하게 함
-        # 이렇게 하면 하위 컴포넌트가 리로드되어도 이 라디오 버튼의 선택값은 유지됨
-        selected_tab = st.radio(
-            "메뉴 선택",
-            ["📈 시간대별 추이", "🏆 유저 랭킹", "👥 전체 유저 검색"],
-            horizontal=True,
-            label_visibility="collapsed",
-            key="main_menu" 
-        )
-        
-        st.markdown(" ") # 여백
-
         # --- [Tab 1] 시간대별 추이 ---
         if selected_tab == "📈 시간대별 추이":
+            # KPI 지표 (여기로 이동)
+            total_posts = filtered_df['작성글수'].sum()
+            total_comments = filtered_df['작성댓글수'].sum()
+            active_users = filtered_df['ID(IP)'].nunique()
+
+            col1, col2, col3 = st.columns(3)
+            col1.metric("📝 총 게시글", f"{total_posts:,}개")
+            col2.metric("💬 총 댓글", f"{total_comments:,}개")
+            col3.metric("👥 순수 활동 유저", f"{active_users:,}명")
+            
+            st.markdown("---")
             st.subheader(f"{selected_date} 시간대별 활동 지표")
             time_agg = filtered_df.groupby('수집시간').agg({
                 '작성글수': 'sum',
@@ -167,59 +181,66 @@ if not df.empty:
         elif selected_tab == "👥 전체 유저 검색":
             st.subheader("🔍 유저 검색 및 전체 목록")
 
-            # 1. 유저 데이터 집계
             user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({
                 '작성글수': 'sum',
                 '작성댓글수': 'sum',
                 '총활동수': 'sum'
             }).reset_index()
-            
             user_list_df = user_list_df.sort_values(by='닉네임', ascending=True)
 
-            # 2. 검색 설정 (닉네임 vs ID)
-            col_search_type, col_search_input = st.columns([1, 4])
+            # --- [UI 개선] 검색 레이아웃 정렬 맞추기 ---
+            # 1. 라벨(텍스트) 줄과 입력(버튼/박스) 줄을 물리적으로 분리하지 않고
+            #    st.columns 안에서 라벨을 markdown으로 따로 찍고
+            #    입력 도구는 label_visibility="collapsed"로 하여 높이를 맞춤
             
-            # [콜백 함수] 검색 기준이 바뀌면 검색창을 초기화하는 함수
+            col_search_type, col_search_input = st.columns([1.2, 4]) # 비율 미세 조정
+            
             def clear_search_box():
                 if 'user_search_box' in st.session_state:
                     st.session_state.user_search_box = None
 
+            # [왼쪽 컬럼] 검색 기준
             with col_search_type:
+                st.markdown("**검색 기준**") # 라벨을 텍스트로 직접 표시 (정렬을 위해)
                 search_type = st.radio(
-                    "검색 기준",
+                    "검색 기준 라벨(숨김)", # 실제 라벨은 숨김
                     ["닉네임", "ID(IP)"],
                     horizontal=True,
-                    on_change=clear_search_box # 변경 시 검색어 초기화
+                    on_change=clear_search_box,
+                    label_visibility="collapsed" # 높이 맞추기 위해 숨김
                 )
 
+            # [오른쪽 컬럼] 검색어 입력
             with col_search_input:
-                # [핵심 수정 2] 자동 완성 검색창 개선
+                # 라벨 텍스트 표시
                 if search_type == "닉네임":
+                    st.markdown("**닉네임 검색** (자동완성)")
                     options = user_list_df['닉네임'].unique().tolist()
-                    placeholder_text = "닉네임을 입력하세요 (자동완성)"
+                    placeholder_text = "닉네임을 입력하세요"
                 else:
+                    st.markdown("**ID(IP) 검색** (자동완성)")
                     options = user_list_df['ID(IP)'].unique().tolist()
-                    placeholder_text = "ID(IP)를 입력하세요 (자동완성)"
+                    placeholder_text = "ID(IP)를 입력하세요"
 
-                # index=None과 placeholder를 사용하여 '진짜 검색창'처럼 동작하게 함
+                # 입력 박스 (라벨 숨김)
                 search_query = st.selectbox(
-                    label=f"검색어 입력 ({search_type})",
+                    label="검색어 입력(숨김)",
                     options=options,
-                    index=None,            # 초기 선택값 없음 (비어있음)
-                    placeholder=placeholder_text, # 안내 문구
-                    key="user_search_box", # 키 지정 (초기화용)
-                    label_visibility="collapsed"
+                    index=None,
+                    placeholder=placeholder_text,
+                    key="user_search_box",
+                    label_visibility="collapsed" # 높이 맞추기 위해 숨김
                 )
 
-            # 3. 검색 필터링 로직
+            # 3. 검색 필터링
             target_df = user_list_df
-            if search_query: # 검색어가 있을 때만 필터링
+            if search_query:
                 if search_type == "닉네임":
                     target_df = user_list_df[user_list_df['닉네임'] == search_query]
                 else:
                     target_df = user_list_df[user_list_df['ID(IP)'] == search_query]
 
-            # 4. 커스텀 페이지네이션
+            # 4. 페이지네이션
             if target_df.empty:
                 st.info("검색 결과가 없습니다.")
             else:
@@ -232,19 +253,15 @@ if not df.empty:
                 if st.session_state.user_page > total_pages:
                     st.session_state.user_page = 1
 
-                # 페이지네이션 UI
                 if total_pages > 1:
                     col_info, col_prev, col_next = st.columns([8.5, 0.75, 0.75])
-
                     with col_info:
                         st.markdown(f"<div style='padding-top: 5px;'><b>{st.session_state.user_page}</b> / {total_pages} 페이지 (총 {total_items}명)</div>", unsafe_allow_html=True)
-                    
                     with col_prev:
                         if st.button("◀ 이전", use_container_width=True):
                             if st.session_state.user_page > 1:
                                 st.session_state.user_page -= 1
                                 st.rerun()
-                    
                     with col_next:
                         if st.button("다음 ▶", use_container_width=True):
                             if st.session_state.user_page < total_pages:
@@ -253,7 +270,6 @@ if not df.empty:
                 else:
                     st.write(f"총 {total_items}명")
 
-                # 데이터 표시
                 current_page = st.session_state.user_page
                 start_idx = (current_page - 1) * items_per_page
                 end_idx = start_idx + items_per_page

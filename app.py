@@ -8,7 +8,7 @@ from botocore.config import Config
 # --- [설정] 페이지 기본 설정 ---
 st.set_page_config(page_title="갤러리 대시보드", layout="wide")
 
-# --- [CSS 주입] 버튼 스타일링 & UI 개선 ---
+# --- [CSS 주입] 버튼 스타일링 & 정렬 교정 ---
 st.markdown("""
     <style>
         /* 1. 데이터프레임 툴바 숨기기 */
@@ -16,45 +16,56 @@ st.markdown("""
             display: none;
         }
 
-        /* 2. [메뉴 선택] 라디오 버튼을 '토글 버튼'처럼 꾸미기 */
-        /* 기본 라디오 버튼 동그라미 숨김 */
+        /* 2. [메뉴 선택] 라디오 버튼 스타일링 */
+        
+        /* (A) 기본 라디오 버튼 동그라미 숨김 */
         div[role="radiogroup"] label > div:first-child {
             display: none !important;
         }
         
-        /* 버튼 기본 스타일 (비활성 상태) */
+        /* (B) 버튼 기본 스타일 (비활성 상태) */
         div[role="radiogroup"] label {
             background-color: #ffffff;
-            padding: 10px 20px !important; /* 내부 여백 */
+            padding: 10px 20px !important;
             border-radius: 8px !important;
             border: 1px solid #e0e0e0;
             margin-right: 10px;
             transition: all 0.2s;
-            justify-content: center; /* 텍스트 가운데 정렬 */
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            
+            /* [중요] 텍스트 정중앙 정렬을 위한 Flex 설정 */
+            display: flex !important;
+            justify-content: center !important; /* 가로 중앙 */
+            align-items: center !important;     /* 세로 중앙 */
+            width: 100%;                        /* 버튼 내부 꽉 채우기 */
         }
         
-        /* 마우스 올렸을 때 (Hover) */
+        /* (C) [핵심 수정] 텍스트 컨테이너 여백 제거 (오른쪽 쏠림 해결) */
+        div[role="radiogroup"] label > div:last-child {
+            margin-left: 0px !important;  /* 동그라미와의 간격 제거 */
+            margin-right: 0px !important;
+            text-align: center;
+        }
+
+        /* (D) 마우스 올렸을 때 (Hover) */
         div[role="radiogroup"] label:hover {
             border-color: #333;
             background-color: #f8f9fa;
         }
 
-        /* [핵심] 선택된 버튼 스타일 (검은색 배경) */
-        /* :has(input:checked)는 최신 브라우저에서 작동하는 강력한 선택자입니다 */
+        /* (E) 선택된 버튼 스타일 (검은색 배경) */
         div[role="radiogroup"] label:has(input:checked) {
-            background-color: #333333 !important; /* 진한 회색/검정 배경 */
+            background-color: #333333 !important;
             border-color: #333333 !important;
             color: white !important;
         }
         
-        /* 선택된 버튼 안의 텍스트 색상도 흰색으로 강제 변경 */
         div[role="radiogroup"] label:has(input:checked) p {
             color: white !important;
             font-weight: bold;
         }
 
-        /* 3. 검색창 높이 맞추기용 */
+        /* 3. 검색창 높이 맞추기 */
         div[data-testid="stSelectbox"] > div > div {
             min-height: 46px;
         }
@@ -151,7 +162,6 @@ if not df.empty:
     st.markdown("---")
 
     # --- [메인 메뉴] 버튼형 라디오 버튼 ---
-    # CSS 덕분에 이제 버튼처럼 보임
     selected_tab = st.radio(
         "메뉴 선택", 
         ["📈 시간대별 추이", "🏆 유저 랭킹", "👥 전체 유저 검색"],
@@ -219,7 +229,7 @@ if not df.empty:
 
             with col_search_type:
                 st.markdown("**검색 기준**")
-                # 검색 기준 라디오 버튼 (이것도 위 CSS 영향을 받아 버튼처럼 보임 - 통일감)
+                # 검색 기준 라디오 버튼
                 search_type = st.radio(
                     "검색 기준 라벨(숨김)",
                     ["닉네임", "ID(IP)"],

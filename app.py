@@ -8,14 +8,14 @@ from botocore.config import Config
 # --- [설정] 페이지 기본 설정 ---
 st.set_page_config(page_title="갤러리 대시보드", layout="wide")
 
-# [CSS 주입] 데이터프레임 툴바(오른쪽 위 메뉴) 숨기기 & 라디오 버튼 스타일링
+# [CSS 주입] 데이터프레임 툴바 숨기기 & 라디오 버튼 스타일링
 st.markdown("""
     <style>
-        /* 데이터프레임 툴바 숨기기 */
+        /* 데이터프레임 툴바(점3개, 돋보기 등) 숨기기 */
         [data-testid="stElementToolbar"] {
             display: none;
         }
-        /* 라디오 버튼을 탭 메뉴처럼 보이게 (선택적) */
+        /* 라디오 버튼을 탭 메뉴처럼 보이게 조정 */
         div[role="radiogroup"] > label > div:first-of-type {
             display: none;
         }
@@ -126,24 +126,18 @@ if not df.empty:
         
         st.markdown("---")
 
-        # --- [중요] 탭 대신 라디오 버튼을 사용하여 상태 유지 ---
-        # 탭은 리로드 시 초기화되므로, session_state와 radio 버튼을 사용합니다.
-        if 'active_tab' not in st.session_state:
-            st.session_state.active_tab = "📈 시간대별 추이"
-
-        # 메뉴 선택 (가로형)
+        # --- [핵심 수정 1] 메인 메뉴 상태 관리 (튕김 방지) ---
+        # key="main_menu"를 사용하여 Streamlit이 자동으로 상태를 기억하게 함
+        # 이렇게 하면 하위 컴포넌트가 리로드되어도 이 라디오 버튼의 선택값은 유지됨
         selected_tab = st.radio(
             "메뉴 선택",
             ["📈 시간대별 추이", "🏆 유저 랭킹", "👥 전체 유저 검색"],
             horizontal=True,
-            index=["📈 시간대별 추이", "🏆 유저 랭킹", "👥 전체 유저 검색"].index(st.session_state.active_tab),
-            label_visibility="collapsed" # 라벨 숨김 (깔끔하게)
+            label_visibility="collapsed",
+            key="main_menu" 
         )
         
-        # 선택된 값을 세션에 저장 (이래야 리로드 되어도 유지됨)
-        st.session_state.active_tab = selected_tab
-
-        st.markdown(" ") # 여백 추가
+        st.markdown(" ") # 여백
 
         # --- [Tab 1] 시간대별 추이 ---
         if selected_tab == "📈 시간대별 추이":
@@ -169,7 +163,7 @@ if not df.empty:
                 hide_index=True, use_container_width=True
             )
 
-        # --- [Tab 3] 전체 유저 일람 (검색 & 커스텀 페이지네이션) ---
+        # --- [Tab 3] 전체 유저 일람 ---
         elif selected_tab == "👥 전체 유저 검색":
             st.subheader("🔍 유저 검색 및 전체 목록")
 
@@ -183,38 +177,43 @@ if not df.empty:
             user_list_df = user_list_df.sort_values(by='닉네임', ascending=True)
 
             # 2. 검색 설정 (닉네임 vs ID)
-            # 검색창과 검색 기준을 나란히 배치
             col_search_type, col_search_input = st.columns([1, 4])
             
+            # [콜백 함수] 검색 기준이 바뀌면 검색창을 초기화하는 함수
+            def clear_search_box():
+                if 'user_search_box' in st.session_state:
+                    st.session_state.user_search_box = None
+
             with col_search_type:
-                # 라디오 버튼으로 검색 기준 선택
                 search_type = st.radio(
                     "검색 기준",
                     ["닉네임", "ID(IP)"],
-                    horizontal=True
+                    horizontal=True,
+                    on_change=clear_search_box # 변경 시 검색어 초기화
                 )
 
             with col_search_input:
-                # 검색 기준에 따라 자동완성 목록 생성
+                # [핵심 수정 2] 자동 완성 검색창 개선
                 if search_type == "닉네임":
-                    # 닉네임 목록 (중복 제거)
-                    options = [""] + sorted(user_list_df['닉네임'].unique().tolist())
-                    help_text = "닉네임을 입력하세요."
+                    options = user_list_df['닉네임'].unique().tolist()
+                    placeholder_text = "닉네임을 입력하세요 (자동완성)"
                 else:
-                    # ID 목록 (중복 제거)
-                    options = [""] + sorted(user_list_df['ID(IP)'].unique().tolist())
-                    help_text = "ID(IP)를 입력하세요."
+                    options = user_list_df['ID(IP)'].unique().tolist()
+                    placeholder_text = "ID(IP)를 입력하세요 (자동완성)"
 
+                # index=None과 placeholder를 사용하여 '진짜 검색창'처럼 동작하게 함
                 search_query = st.selectbox(
-                    f"검색어 입력 ({search_type})",
+                    label=f"검색어 입력 ({search_type})",
                     options=options,
-                    index=0,
-                    help=help_text
+                    index=None,            # 초기 선택값 없음 (비어있음)
+                    placeholder=placeholder_text, # 안내 문구
+                    key="user_search_box", # 키 지정 (초기화용)
+                    label_visibility="collapsed"
                 )
 
             # 3. 검색 필터링 로직
             target_df = user_list_df
-            if search_query != "":
+            if search_query: # 검색어가 있을 때만 필터링
                 if search_type == "닉네임":
                     target_df = user_list_df[user_list_df['닉네임'] == search_query]
                 else:
@@ -228,13 +227,12 @@ if not df.empty:
                 total_items = len(target_df)
                 total_pages = math.ceil(total_items / items_per_page)
 
-                # Session State 관리
                 if 'user_page' not in st.session_state:
                     st.session_state.user_page = 1
                 if st.session_state.user_page > total_pages:
                     st.session_state.user_page = 1
 
-                # 레이아웃 비율
+                # 페이지네이션 UI
                 if total_pages > 1:
                     col_info, col_prev, col_next = st.columns([8.5, 0.75, 0.75])
 
@@ -255,7 +253,7 @@ if not df.empty:
                 else:
                     st.write(f"총 {total_items}명")
 
-                # 데이터 슬라이싱
+                # 데이터 표시
                 current_page = st.session_state.user_page
                 start_idx = (current_page - 1) * items_per_page
                 end_idx = start_idx + items_per_page

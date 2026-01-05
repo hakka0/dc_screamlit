@@ -3,6 +3,7 @@ import pandas as pd
 import boto3
 import io
 import math
+import altair as alt  # [추가] 고급 시각화를 위한 라이브러리
 from botocore.config import Config
 
 # --- [설정] 페이지 기본 설정 ---
@@ -11,19 +12,9 @@ st.set_page_config(page_title="갤러리 대시보드", layout="wide")
 # --- [CSS 주입] 버튼 스타일링 & UI 개선 ---
 st.markdown("""
     <style>
-        /* 1. 데이터프레임 툴바 숨기기 */
-        [data-testid="stElementToolbar"] {
-            display: none;
-        }
-
-        /* 2. [메뉴 선택] 라디오 버튼 스타일링 (토글 버튼화) */
+        [data-testid="stElementToolbar"] { display: none; }
         
-        /* 기본 라디오 동그라미 숨기기 */
-        div[role="radiogroup"] label > div:first-child {
-            display: none !important;
-        }
-        
-        /* 버튼 컨테이너 (라벨) 스타일 */
+        div[role="radiogroup"] label > div:first-child { display: none !important; }
         div[role="radiogroup"] label {
             background-color: #ffffff;
             padding: 10px 20px !important;
@@ -32,46 +23,32 @@ st.markdown("""
             margin-right: 10px;
             transition: all 0.2s;
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-            
-            /* [핵심 수정] 텍스트 정중앙 정렬을 위한 Flex 설정 */
             display: flex;
             justify-content: center;
             align-items: center;
             width: auto; 
-            min-width: 100px; /* 버튼 최소 너비 확보 */
+            min-width: 100px;
         }
-        
-        /* [핵심 수정] 내부 텍스트(Markdown/P태그) 강제 중앙 정렬 */
         div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] > p {
             text-align: center;
             margin: 0;
             width: 100%;
             display: block;
         }
-        
-        /* 마우스 올렸을 때 (Hover) */
         div[role="radiogroup"] label:hover {
             border-color: #333;
             background-color: #f8f9fa;
         }
-
-        /* 선택된 버튼 스타일 (검은색 배경) */
         div[role="radiogroup"] label:has(input:checked) {
             background-color: #333333 !important;
             border-color: #333333 !important;
             color: white !important;
         }
-        
-        /* 선택된 버튼 텍스트 색상 변경 */
         div[role="radiogroup"] label:has(input:checked) p {
             color: white !important;
             font-weight: bold;
         }
-
-        /* 3. 검색창 높이 맞추기 */
-        div[data-testid="stSelectbox"] > div > div {
-            min-height: 46px;
-        }
+        div[data-testid="stSelectbox"] > div > div { min-height: 46px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -152,6 +129,7 @@ if not df.empty:
         )
 
     # --- 데이터 필터링 로직 ---
+    # [주의] 그래프용 전체 데이터는 따로 관리하고, 통계용만 여기서 필터링
     day_filtered_df = df[df['수집시간'].dt.date == selected_date]
     
     if end_hour == 24:
@@ -164,7 +142,7 @@ if not df.empty:
 
     st.markdown("---")
 
-    # --- [메인 메뉴] 버튼형 라디오 버튼 ---
+    # --- [메인 메뉴] ---
     selected_tab = st.radio(
         "메뉴 선택", 
         ["📈 시간대별 추이", "🏆 유저 랭킹", "👥 전체 유저 검색"],
@@ -173,13 +151,14 @@ if not df.empty:
         label_visibility="collapsed"
     )
     
-    st.markdown(" ") # 여백
+    st.markdown(" ") 
 
     if filtered_df.empty:
         st.warning(f"⚠️ {selected_date} 해당 시간대에 데이터가 없습니다.")
     else:
         # --- [Tab 1] 시간대별 추이 ---
         if selected_tab == "📈 시간대별 추이":
+            # KPI 지표 (선택된 날짜/시간 기준)
             total_posts = filtered_df['작성글수'].sum()
             total_comments = filtered_df['작성댓글수'].sum()
             active_users = filtered_df['ID(IP)'].nunique()
@@ -190,13 +169,58 @@ if not df.empty:
             col3.metric("👥 순수 활동 유저", f"{active_users:,}명")
             
             st.markdown("---")
-            st.subheader(f"{selected_date} 시간대별 활동 지표")
-            time_agg = filtered_df.groupby('수집시간').agg({
+            st.subheader("📊 시간대별 활동 추이")
+
+            # [핵심 수정] 1. 전체 기간 데이터 집계 (모든 날짜 포함)
+            full_trend_df = df.groupby('수집시간').agg({
                 '작성글수': 'sum',
                 '작성댓글수': 'sum',
                 'ID(IP)': 'nunique'
-            }).rename(columns={'ID(IP)': '활동유저수'})
-            st.line_chart(time_agg)
+            }).reset_index().rename(columns={'ID(IP)': '활동유저수'})
+
+            # 2. 데이터 변형 (Altair용 Wide -> Long)
+            chart_data = full_trend_df.melt(
+                '수집시간', 
+                var_name='활동유형', 
+                value_name='카운트'
+            )
+
+            # 3. 초기 줌(Zoom) 설정: 선택된 날짜의 00:00 ~ 23:59
+            zoom_start = pd.to_datetime(selected_date)
+            zoom_end = zoom_start + pd.Timedelta(hours=23, minutes=59)
+
+            # 4. Altair 차트 생성
+            chart = alt.Chart(chart_data).mark_line(point=True).encode(
+                x=alt.X(
+                    '수집시간', 
+                    # 한글 날짜 포맷 (예: 12월 31일 14시)
+                    axis=alt.Axis(format='%m월 %d일 %H시', title='시간', tickCount=10),
+                    # [핵심] X축의 초기 보여줄 범위를 선택된 날짜로 지정 (데이터는 전체 다 있음)
+                    scale=alt.Scale(domain=[zoom_start, zoom_end])
+                ),
+                y=alt.Y(
+                    '카운트', 
+                    title='활동 수',
+                    # Y축은 0부터 시작하도록 고정
+                    scale=alt.Scale(zero=True)
+                ),
+                color=alt.Color('활동유형', legend=alt.Legend(title="지표")),
+                tooltip=[
+                    alt.Tooltip('수집시간', format='%Y-%m-%d %H:%M'),
+                    alt.Tooltip('활동유형'),
+                    alt.Tooltip('카운트')
+                ]
+            ).properties(
+                height=450,
+                # 전체 데이터를 로드하되 렌더링 최적화
+            ).interactive(
+                # [핵심] Y축(위아래) 드래그는 막고, X축(좌우) 드래그만 허용
+                bind_y=False
+            )
+
+            st.altair_chart(chart, use_container_width=True)
+            st.caption(f"💡 그래프를 **좌우로 드래그**하면 다른 날짜의 데이터도 볼 수 있습니다. (마우스 휠로 줌인/줌아웃 가능)")
+
 
         # --- [Tab 2] 활동왕 랭킹 ---
         elif selected_tab == "🏆 유저 랭킹":
@@ -223,7 +247,6 @@ if not df.empty:
             }).reset_index()
             user_list_df = user_list_df.sort_values(by='닉네임', ascending=True)
 
-            # 검색 UI 레이아웃
             col_search_type, col_search_input = st.columns([1.2, 4])
             
             def clear_search_box():
@@ -233,7 +256,7 @@ if not df.empty:
             with col_search_type:
                 st.markdown("**검색 기준**")
                 search_type = st.radio(
-                    "검색 기준 라벨(숨김)",
+                    "검색 기준 라벨",
                     ["닉네임", "ID(IP)"],
                     horizontal=True,
                     on_change=clear_search_box,
@@ -251,7 +274,7 @@ if not df.empty:
                     placeholder_text = "ID(IP)를 입력하세요"
 
                 search_query = st.selectbox(
-                    label="검색어 입력(숨김)",
+                    label="검색어 입력",
                     options=options,
                     index=None,
                     placeholder=placeholder_text,
@@ -259,7 +282,6 @@ if not df.empty:
                     label_visibility="collapsed"
                 )
 
-            # 검색 로직
             target_df = user_list_df
             if search_query:
                 if search_type == "닉네임":
@@ -267,7 +289,6 @@ if not df.empty:
                 else:
                     target_df = user_list_df[user_list_df['ID(IP)'] == search_query]
 
-            # 페이지네이션
             if target_df.empty:
                 st.info("검색 결과가 없습니다.")
             else:

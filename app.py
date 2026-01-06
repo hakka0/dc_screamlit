@@ -211,6 +211,14 @@ if not df.empty:
                     title='활동 수',
                     scale=alt.Scale(zero=True)
                 ),
+                color=alt.Color(
+                    '활동유형', 
+                    legend=alt.Legend(title="지표"),
+                    scale=alt.Scale(
+                        domain=['활동유저수', '작성글수', '작성댓글수'],
+                        range=['red', 'green', 'blue']
+                    )
+                ),
                 color=alt.Color('활동유형', legend=alt.Legend(title="지표")),
                 tooltip=[
                     alt.Tooltip('수집시간', format='%Y-%m-%d %H:%M'),
@@ -232,6 +240,11 @@ if not df.empty:
             st.subheader("🔥 Top 20")
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
+            
+            top_users = top_users.rename(columns={
+                            '유저타입': '계정타입',
+                            '총활동수': '총활동수(글x10+댓)'
+                        })
             
             st.dataframe(
                 top_users,
@@ -327,8 +340,13 @@ if not df.empty:
                 start_idx = (current_page - 1) * items_per_page
                 end_idx = start_idx + items_per_page
                 page_df = target_df.iloc[start_idx:end_idx]
-
-                display_columns = ['닉네임', 'ID(IP)', '유저타입', '작성글수', '작성댓글수', '총활동수']
+                
+                page_df = page_df.rename(columns={
+                    '유저타입': '계정타입',
+                    '총활동수': '총활동수(글x10+댓)'
+                })
+                
+                display_columns = ['닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수(글x10+댓)']
 
                 st.dataframe(
                     page_df[display_columns],

@@ -7,7 +7,7 @@ import altair as alt
 from botocore.config import Config
 
 # --- 페이지 기본 설정 ---
-st.set_page_config(page_title="갤러리 대시보드", layout="wide")
+st.set_page_config(page_title="ProjectMX Dashboard", layout="wide")
 
 # --- 버튼 스타일링 & UI 개선 ---
 st.markdown("""

@@ -5,6 +5,7 @@ import io
 import math
 import altair as alt
 import random
+import concurrent.futures
 from botocore.config import Config
 
 # --- 페이지 기본 설정 ---
@@ -56,9 +57,9 @@ st.markdown("""
 st_header_col, st_space, st_date_col, st_time_col = st.columns([5, 1, 2, 3])
 
 with st_header_col:
-    st.title(" 블루 아카이브 갤러리 대시보드")
+    st.title("📊 블루 아카이브 갤러리 대시보드")
 
-# ---  Cloudflare R2에서 데이터 가져오기 ---
+# --- [핵심 수정] Cloudflare R2에서 데이터 가져오기 (멀티스레딩 적용) ---
 @st.cache_data(ttl=300, show_spinner=False)
 def load_data_from_r2():
     try:
@@ -70,6 +71,7 @@ def load_data_from_r2():
         st.error("Secrets 설정 오류: Streamlit 관리자 페이지에서 키를 확인해주세요.")
         return pd.DataFrame()
 
+    # Boto3 클라이언트 생성
     s3 = boto3.client(
         's3',
         endpoint_url=f'https://{account_id}.r2.cloudflarestorage.com',
@@ -84,22 +86,30 @@ def load_data_from_r2():
         st.error(f"R2 접속 실패: {e}")
         return pd.DataFrame()
 
-    all_dfs = []
+    if 'Contents' not in response:
+        return pd.DataFrame()
+
+    files = [f for f in response['Contents'] if f['Key'].endswith('.xlsx')]
+    if not files:
+        return pd.DataFrame()
+
+    # [병렬 처리용 함수] 파일 하나를 다운로드하고 파싱
+    def fetch_and_parse(file_info):
+        file_key = file_info['Key']
+        try:
+            obj = s3.get_object(Bucket=bucket_name, Key=file_key)
+            data = obj['Body'].read()
+            # openpyxl 엔진 명시로 속도 최적화
+            return pd.read_excel(io.BytesIO(data), engine='openpyxl')
+        except Exception:
+            return None
+
+    # [멀티스레딩 실행] 최대 20개 파일 동시 요청
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+        results = list(executor.map(fetch_and_parse, files))
     
-    if 'Contents' in response:
-        files = [f for f in response['Contents'] if f['Key'].endswith('.xlsx')]
-        if not files:
-            return pd.DataFrame()
-            
-        for file in files:
-            file_key = file['Key']
-            try:
-                obj = s3.get_object(Bucket=bucket_name, Key=file_key)
-                data = obj['Body'].read()
-                df = pd.read_excel(io.BytesIO(data))
-                all_dfs.append(df)
-            except:
-                continue
+    # 실패한 파일(None) 제거
+    all_dfs = [df for df in results if df is not None]
     
     if not all_dfs:
         return pd.DataFrame()
@@ -107,7 +117,8 @@ def load_data_from_r2():
     final_df = pd.concat(all_dfs, ignore_index=True)
     final_df['수집시간'] = pd.to_datetime(final_df['수집시간'])
 
-    final_df['총활동수'] = (final_df['작성글수']) * 10 + final_df['작성댓글수']
+    # 총활동수 계산 (작성글*10 + 댓글)
+    final_df['총활동수'] = (final_df['작성글수'] * 10) + final_df['작성댓글수']
     return final_df
 
 # --- 데이터 처리 ---
@@ -172,6 +183,7 @@ if not df.empty:
         if selected_tab == "📈 데이터 상세":
             total_posts = filtered_df['작성글수'].sum()
             total_comments = filtered_df['작성댓글수'].sum()
+            
             active_users = len(filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']))
 
             col1, col2, col3 = st.columns(3)
@@ -198,7 +210,6 @@ if not df.empty:
             chart = alt.Chart(chart_data).mark_line(point=True).encode(
                 x=alt.X(
                     '수집시간', 
-                    # 한글 날짜 포맷 (예: 12월 31일 14시)
                     axis=alt.Axis(format='%m월 %d일 %H시', title='시간', tickCount=10),
                     scale=alt.Scale(domain=[zoom_start, zoom_end])
                 ),
@@ -237,9 +248,9 @@ if not df.empty:
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
             
             top_users = top_users.rename(columns={
-                            '유저타입': '계정타입',
-                            '총활동수': '총활동수(글x10+댓)'
-                        })
+                '유저타입': '계정타입',
+                '총활동수': '총활동수(글x10+댓)'
+            })
             
             st.dataframe(
                 top_users,
@@ -346,7 +357,7 @@ if not df.empty:
                 st.dataframe(
                     page_df[display_columns],
                     column_config={
-                        "총활동수": st.column_config.NumberColumn(format="%d회"),
+                        "총활동수(글x10+댓)": st.column_config.NumberColumn(format="%d회"),
                     },
                     hide_index=True,
                     use_container_width=True

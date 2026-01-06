@@ -248,7 +248,7 @@ if not df.empty:
             st.dataframe(
                 top_users,
                 column_config={
-                    "총활동수": st.column_config.ProgressColumn(format="%d", min_value=0, max_value=int(top_users['총활동수'].max()) if not top_users.empty else 100),
+                    "총활동수(글x10+댓)": st.column_config.ProgressColumn(format="%d", min_value=0, max_value=int(top_users['총활동수(글x10+댓)'].max()) if not top_users.empty else 100),
                 },
                 hide_index=True, use_container_width=True
             )
@@ -260,7 +260,7 @@ if not df.empty:
             user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({
                 '작성글수': 'sum',
                 '작성댓글수': 'sum',
-                '총활동수': 'sum'
+                '총활동수(글x10+댓)': 'sum'
             }).reset_index()
             user_list_df = user_list_df.sort_values(by='닉네임', ascending=True)
 

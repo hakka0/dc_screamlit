@@ -143,7 +143,7 @@ if not df.empty:
     # --- [메인 메뉴] ---
     selected_tab = st.radio(
         "메뉴 선택", 
-        ["📈 시간대별 그래프", "🏆 유저 랭킹", "👥 전체 유저 검색"],
+        ["📈 데이터 상세", "🏆 유저 랭킹", "👥 전체 유저 검색"],
         horizontal=True,
         key="main_menu",
         label_visibility="collapsed"
@@ -155,7 +155,7 @@ if not df.empty:
         st.warning(f"⚠️ {selected_date} 해당 시간대에 데이터가 없습니다.")
     else:
         # --- [Tab 1] 시간대별 그래프 ---
-        if selected_tab == "📈 시간대별 그래프":
+        if selected_tab == "📈 데이터 상세":
             total_posts = filtered_df['작성글수'].sum()
             total_comments = filtered_df['작성댓글수'].sum()
             active_users = filtered_df['ID(IP)'].nunique()
@@ -173,7 +173,7 @@ if not df.empty:
                 '작성글수': 'sum',
                 '작성댓글수': 'sum',
                 'ID(IP)': 'nunique'
-            }).reset_index().rename(columns={'ID(IP)': '활동유저수'})
+            }).reset_index().rename(columns={'ID(IP)': '액티브'})
 
             # 데이터 변형 (Altair용 Wide -> Long)
             chart_data = full_trend_df.melt(

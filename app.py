@@ -3,13 +3,13 @@ import pandas as pd
 import boto3
 import io
 import math
-import altair as alt  # [추가] 고급 시각화를 위한 라이브러리
+import altair as alt
 from botocore.config import Config
 
-# --- [설정] 페이지 기본 설정 ---
+# --- 페이지 기본 설정 ---
 st.set_page_config(page_title="갤러리 대시보드", layout="wide")
 
-# --- [CSS 주입] 버튼 스타일링 & UI 개선 ---
+# --- 버튼 스타일링 & UI 개선 ---
 st.markdown("""
     <style>
         [data-testid="stElementToolbar"] { display: none; }
@@ -52,13 +52,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 레이아웃: 헤더와 필터 영역 분리
 st_header_col, st_space, st_date_col, st_time_col = st.columns([5, 1, 2, 3])
 
 with st_header_col:
-    st.title("📊 갤러리 활동 대시보드")
+    st.title(" 블루 아카이브 활동 대시보드")
 
-# --- [함수] Cloudflare R2에서 데이터 가져오기 ---
+# ---  Cloudflare R2에서 데이터 가져오기 ---
 @st.cache_data(ttl=300)
 def load_data_from_r2():
     try:
@@ -108,7 +107,7 @@ def load_data_from_r2():
     final_df['수집시간'] = pd.to_datetime(final_df['수집시간'])
     return final_df
 
-# --- [메인] 데이터 처리 ---
+# --- 데이터 처리 ---
 df = load_data_from_r2()
 
 if not df.empty:
@@ -129,7 +128,6 @@ if not df.empty:
         )
 
     # --- 데이터 필터링 로직 ---
-    # [주의] 그래프용 전체 데이터는 따로 관리하고, 통계용만 여기서 필터링
     day_filtered_df = df[df['수집시간'].dt.date == selected_date]
     
     if end_hour == 24:
@@ -145,7 +143,7 @@ if not df.empty:
     # --- [메인 메뉴] ---
     selected_tab = st.radio(
         "메뉴 선택", 
-        ["📈 시간대별 추이", "🏆 유저 랭킹", "👥 전체 유저 검색"],
+        ["📈 시간대별 그래프", "🏆 유저 랭킹", "👥 전체 유저 검색"],
         horizontal=True,
         key="main_menu",
         label_visibility="collapsed"
@@ -156,9 +154,8 @@ if not df.empty:
     if filtered_df.empty:
         st.warning(f"⚠️ {selected_date} 해당 시간대에 데이터가 없습니다.")
     else:
-        # --- [Tab 1] 시간대별 추이 ---
-        if selected_tab == "📈 시간대별 추이":
-            # KPI 지표 (선택된 날짜/시간 기준)
+        # --- [Tab 1] 시간대별 그래프 ---
+        if selected_tab == "📈 시간대별 그래프":
             total_posts = filtered_df['작성글수'].sum()
             total_comments = filtered_df['작성댓글수'].sum()
             active_users = filtered_df['ID(IP)'].nunique()
@@ -166,42 +163,38 @@ if not df.empty:
             col1, col2, col3 = st.columns(3)
             col1.metric("📝 총 게시글", f"{total_posts:,}개")
             col2.metric("💬 총 댓글", f"{total_comments:,}개")
-            col3.metric("👥 순수 활동 유저", f"{active_users:,}명")
+            col3.metric("👥 액티브 유저", f"{active_users:,}명")
             
             st.markdown("---")
-            st.subheader("📊 시간대별 활동 추이")
+            st.subheader("📊 시간대별 활동 그래프")
 
-            # [핵심 수정] 1. 전체 기간 데이터 집계 (모든 날짜 포함)
+            # 전체 기간 데이터 집계
             full_trend_df = df.groupby('수집시간').agg({
                 '작성글수': 'sum',
                 '작성댓글수': 'sum',
                 'ID(IP)': 'nunique'
             }).reset_index().rename(columns={'ID(IP)': '활동유저수'})
 
-            # 2. 데이터 변형 (Altair용 Wide -> Long)
+            # 데이터 변형 (Altair용 Wide -> Long)
             chart_data = full_trend_df.melt(
                 '수집시간', 
                 var_name='활동유형', 
                 value_name='카운트'
             )
-
-            # 3. 초기 줌(Zoom) 설정: 선택된 날짜의 00:00 ~ 23:59
             zoom_start = pd.to_datetime(selected_date)
             zoom_end = zoom_start + pd.Timedelta(hours=23, minutes=59)
 
-            # 4. Altair 차트 생성
+            # Altair 차트 생성
             chart = alt.Chart(chart_data).mark_line(point=True).encode(
                 x=alt.X(
                     '수집시간', 
                     # 한글 날짜 포맷 (예: 12월 31일 14시)
                     axis=alt.Axis(format='%m월 %d일 %H시', title='시간', tickCount=10),
-                    # [핵심] X축의 초기 보여줄 범위를 선택된 날짜로 지정 (데이터는 전체 다 있음)
                     scale=alt.Scale(domain=[zoom_start, zoom_end])
                 ),
                 y=alt.Y(
                     '카운트', 
                     title='활동 수',
-                    # Y축은 0부터 시작하도록 고정
                     scale=alt.Scale(zero=True)
                 ),
                 color=alt.Color('활동유형', legend=alt.Legend(title="지표")),
@@ -212,9 +205,7 @@ if not df.empty:
                 ]
             ).properties(
                 height=450,
-                # 전체 데이터를 로드하되 렌더링 최적화
             ).interactive(
-                # [핵심] Y축(위아래) 드래그는 막고, X축(좌우) 드래그만 허용
                 bind_y=False
             )
 
@@ -224,7 +215,7 @@ if not df.empty:
 
         # --- [Tab 2] 활동왕 랭킹 ---
         elif selected_tab == "🏆 유저 랭킹":
-            st.subheader("🔥 활동왕 랭킹 (Top 20)")
+            st.subheader("🔥 Top 20")
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
             
@@ -237,7 +228,7 @@ if not df.empty:
             )
 
         # --- [Tab 3] 전체 유저 일람 ---
-        elif selected_tab == "👥 전체 유저 검색":
+        elif selected_tab == "👥 유저 검색":
             st.subheader("🔍 유저 검색 및 전체 목록")
 
             user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({

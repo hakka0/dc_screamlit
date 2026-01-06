@@ -55,7 +55,7 @@ st.markdown("""
 st_header_col, st_space, st_date_col, st_time_col = st.columns([5, 1, 2, 3])
 
 with st_header_col:
-    st.title(" 블루 아카이브 활동 대시보드")
+    st.title(" 블루 아카이브 갤러리 대시보드")
 
 # ---  Cloudflare R2에서 데이터 가져오기 ---
 @st.cache_data(ttl=300)
@@ -105,6 +105,8 @@ def load_data_from_r2():
 
     final_df = pd.concat(all_dfs, ignore_index=True)
     final_df['수집시간'] = pd.to_datetime(final_df['수집시간'])
+
+    final_df['총활동수'] = final_df['작성글수'] + (final_df['작성댓글수'] * 10)
     return final_df
 
 # --- 데이터 처리 ---
@@ -143,7 +145,7 @@ if not df.empty:
     # --- [메인 메뉴] ---
     selected_tab = st.radio(
         "메뉴 선택", 
-        ["📈 데이터 상세", "🏆 유저 랭킹", "👥 전체 유저 검색"],
+        ["📈 데이터 상세", "🏆 유저 랭킹", "👥 유저 검색"],
         horizontal=True,
         key="main_menu",
         label_visibility="collapsed"
@@ -173,7 +175,7 @@ if not df.empty:
                 '작성글수': 'sum',
                 '작성댓글수': 'sum',
                 'ID(IP)': 'nunique'
-            }).reset_index().rename(columns={'ID(IP)': '액티브'})
+            }).reset_index().rename(columns={'ID(IP)': '액티브수'})
 
             # 데이터 변형 (Altair용 Wide -> Long)
             chart_data = full_trend_df.melt(
@@ -314,7 +316,7 @@ if not df.empty:
                 end_idx = start_idx + items_per_page
                 page_df = target_df.iloc[start_idx:end_idx]
 
-                display_columns = ['닉네임', 'ID(IP)', '유저타입', '작성글수', '작성댓글수', '총활동수']
+                display_columns = ['닉네임', 'ID(IP)', '계정종류', '작성글수', '작성댓글수', '총활동수']
 
                 st.dataframe(
                     page_df[display_columns],

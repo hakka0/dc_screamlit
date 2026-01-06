@@ -260,7 +260,7 @@ if not df.empty:
             user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({
                 '작성글수': 'sum',
                 '작성댓글수': 'sum',
-                '총활동수(글x10+댓)': 'sum'
+                '총활동수': 'sum'
             }).reset_index()
             user_list_df = user_list_df.sort_values(by='닉네임', ascending=True)
 

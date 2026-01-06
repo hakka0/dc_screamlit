@@ -183,7 +183,7 @@ if not df.empty:
             st.subheader("📊 시간대별 활동 그래프")
 
             trend_stats = df.groupby('수집시간')[['작성글수', '작성댓글수']].sum().reset_index()
-            trend_users = df.groupby(['수집시간', '닉네임', 'ID(IP)', '유저타입']).size().reset_index().groupby('수집시간').size().reset_index(name='활동유저수')
+            trend_users = df.groupby(['수집시간', '닉네임', 'ID(IP)', '유저타입']).size().reset_index().groupby('수집시간').size().reset_index(name='액티브수')
             full_trend_df = pd.merge(trend_stats, trend_users, on='수집시간', how='left').fillna(0)
 
             chart_data = full_trend_df.melt(

@@ -4,6 +4,7 @@ import boto3
 import io
 import math
 import altair as alt
+import random
 from botocore.config import Config
 
 # --- 페이지 기본 설정 ---
@@ -58,7 +59,7 @@ with st_header_col:
     st.title(" 블루 아카이브 갤러리 대시보드")
 
 # ---  Cloudflare R2에서 데이터 가져오기 ---
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300, show_spinner=False)
 def load_data_from_r2():
     try:
         aws_access_key_id = st.secrets["CF_ACCESS_KEY_ID"]
@@ -106,11 +107,22 @@ def load_data_from_r2():
     final_df = pd.concat(all_dfs, ignore_index=True)
     final_df['수집시간'] = pd.to_datetime(final_df['수집시간'])
 
-    final_df['총활동수'] = final_df['작성글수'] + (final_df['작성댓글수'] * 10)
+    final_df['총활동수'] = (final_df['작성글수']) * 10 + final_df['작성댓글수']
     return final_df
 
 # --- 데이터 처리 ---
-df = load_data_from_r2()
+loading_messages = [
+    "☁️ 저 구름 너머엔 무엇이 있을까요?",
+    "🏃‍♂️ 데이터가 좀 많네요. 기다려 주세요.",
+    "🔍 놓친 데이터가 존재하는지 확인 중 입니다.",
+    "💾 이 더미 데이터는 뭘까요?",
+    "🤖 삐삐쀼쀼"
+]
+
+loading_text = random.choice(loading_messages)
+
+with st.spinner(loading_text):
+    df = load_data_from_r2()
 
 if not df.empty:
     min_date = df['수집시간'].dt.date.min()
@@ -218,7 +230,7 @@ if not df.empty:
         # --- [Tab 2] 활동왕 랭킹 ---
         elif selected_tab == "🏆 유저 랭킹":
             st.subheader("🔥 Top 20")
-            ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
+            ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '계정종류'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
             
             st.dataframe(
@@ -233,7 +245,7 @@ if not df.empty:
         elif selected_tab == "👥 유저 검색":
             st.subheader("🔍 유저 검색 및 전체 목록")
 
-            user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({
+            user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '계정종류']).agg({
                 '작성글수': 'sum',
                 '작성댓글수': 'sum',
                 '총활동수': 'sum'

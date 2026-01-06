@@ -230,7 +230,7 @@ if not df.empty:
         # --- [Tab 2] 활동왕 랭킹 ---
         elif selected_tab == "🏆 유저 랭킹":
             st.subheader("🔥 Top 20")
-            ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '계정종류'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
+            ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
             
             st.dataframe(
@@ -245,7 +245,7 @@ if not df.empty:
         elif selected_tab == "👥 유저 검색":
             st.subheader("🔍 유저 검색 및 전체 목록")
 
-            user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '계정종류']).agg({
+            user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({
                 '작성글수': 'sum',
                 '작성댓글수': 'sum',
                 '총활동수': 'sum'
@@ -328,7 +328,7 @@ if not df.empty:
                 end_idx = start_idx + items_per_page
                 page_df = target_df.iloc[start_idx:end_idx]
 
-                display_columns = ['닉네임', 'ID(IP)', '계정종류', '작성글수', '작성댓글수', '총활동수']
+                display_columns = ['닉네임', 'ID(IP)', '유저타입', '작성글수', '작성댓글수', '총활동수']
 
                 st.dataframe(
                     page_df[display_columns],

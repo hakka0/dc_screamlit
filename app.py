@@ -219,7 +219,6 @@ if not df.empty:
                         range=['red', 'green', 'blue']
                     )
                 ),
-                color=alt.Color('활동유형', legend=alt.Legend(title="지표")),
                 tooltip=[
                     alt.Tooltip('수집시간', format='%Y-%m-%d %H:%M'),
                     alt.Tooltip('활동유형'),

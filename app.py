@@ -172,7 +172,7 @@ if not df.empty:
         if selected_tab == "📈 데이터 상세":
             total_posts = filtered_df['작성글수'].sum()
             total_comments = filtered_df['작성댓글수'].sum()
-            active_users = filtered_df['ID(IP)'].nunique()
+            active_users = len(filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']))
 
             col1, col2, col3 = st.columns(3)
             col1.metric("📝 총 게시글", f"{total_posts:,}개")
@@ -182,14 +182,10 @@ if not df.empty:
             st.markdown("---")
             st.subheader("📊 시간대별 활동 그래프")
 
-            # 전체 기간 데이터 집계
-            full_trend_df = df.groupby('수집시간').agg({
-                '작성글수': 'sum',
-                '작성댓글수': 'sum',
-                'ID(IP)': 'nunique'
-            }).reset_index().rename(columns={'ID(IP)': '액티브수'})
+            trend_stats = df.groupby('수집시간')[['작성글수', '작성댓글수']].sum().reset_index()
+            trend_users = df.groupby(['수집시간', '닉네임', 'ID(IP)', '유저타입']).size().reset_index().groupby('수집시간').size().reset_index(name='활동유저수')
+            full_trend_df = pd.merge(trend_stats, trend_users, on='수집시간', how='left').fillna(0)
 
-            # 데이터 변형 (Altair용 Wide -> Long)
             chart_data = full_trend_df.melt(
                 '수집시간', 
                 var_name='활동유형', 

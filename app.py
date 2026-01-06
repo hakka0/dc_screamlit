@@ -215,7 +215,7 @@ if not df.empty:
                     '활동유형', 
                     legend=alt.Legend(title="지표"),
                     scale=alt.Scale(
-                        domain=['활동유저수', '작성글수', '작성댓글수'],
+                        domain=['액티브수', '작성글수', '작성댓글수'],
                         range=['red', 'green', 'blue']
                     )
                 ),

@@ -48,6 +48,7 @@ st.markdown("""
             font-weight: bold;
         }
         div[data-testid="stSelectbox"] > div > div { min-height: 46px; }
+        header[data-testid="stHeader"] { visibility: hidden; }
     </style>
 """, unsafe_allow_html=True)
 

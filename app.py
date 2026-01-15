@@ -55,6 +55,9 @@ st.markdown("""
         /* 헤더/푸터 숨김 */
         header[data-testid="stHeader"] { visibility: hidden; }
         footer { visibility: hidden; }
+        
+        /* 데이터프레임 내 링크처럼 보이는 텍스트 커서 변경 (선택사항) */
+        .stDataFrame td { cursor: pointer; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -119,13 +122,12 @@ def load_data_from_r2():
     final_df['총활동수'] = final_df['작성글수'] + final_df['작성댓글수']
     return final_df
 
-# --- [추가] 유저 상세 정보 모달창 함수 ---
+# --- 유저 상세 정보 모달창 함수 ---
 @st.dialog("👤 유저 상세 활동 분석")
 def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
     st.subheader(f"{nick} ({user_type})")
     st.caption(f"ID(IP): {user_id} | 기준일: {target_date}")
 
-    # 해당 유저의 데이터만 필터링 (선택된 날짜 기준)
     user_daily_df = raw_df[
         (raw_df['수집시간'].dt.date == target_date) & 
         (raw_df['닉네임'] == nick) & 
@@ -136,48 +138,30 @@ def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
         st.warning("선택하신 날짜에 활동 데이터가 없습니다.")
         return
 
-    # 시간대별 집계
     user_trend = user_daily_df.groupby('수집시간')[['작성글수', '작성댓글수']].sum().reset_index()
-    
-    # 그래프 데이터 변환 (Wide -> Long)
     chart_data = user_trend.melt('수집시간', var_name='활동유형', value_name='카운트')
     
-    # 줌 범위 설정
     zoom_start = pd.to_datetime(target_date)
     zoom_end = zoom_start + pd.Timedelta(hours=23, minutes=59)
     zoom_selection = alt.selection_interval(bind='scales', encodings=['x'])
 
-    # 차트 그리기
     chart = alt.Chart(chart_data).mark_line(point=True).encode(
-        x=alt.X(
-            '수집시간', 
-            axis=alt.Axis(format='%H시', title='시간', tickCount=12),
-            scale=alt.Scale(domain=[zoom_start, zoom_end])
-        ),
+        x=alt.X('수집시간', axis=alt.Axis(format='%H시', title='시간', tickCount=12), scale=alt.Scale(domain=[zoom_start, zoom_end])),
         y=alt.Y('카운트', title='활동 수', scale=alt.Scale(zero=True, domainMin=0)),
-        color=alt.Color(
-            '활동유형', 
-            legend=alt.Legend(title="활동"),
-            scale=alt.Scale(domain=['작성글수', '작성댓글수'], range=['green', 'blue'])
-        ),
-        tooltip=[
-            alt.Tooltip('수집시간', format='%H시 %M분'),
-            alt.Tooltip('활동유형'),
-            alt.Tooltip('카운트')
-        ]
-    ).properties(
-        height=350,
-        title=f"{nick}님의 시간대별 활동 추이"
-    ).add_params(
-        zoom_selection
-    )
+        color=alt.Color('활동유형', legend=alt.Legend(title="활동"), scale=alt.Scale(domain=['작성글수', '작성댓글수'], range=['green', 'blue'])),
+        tooltip=[alt.Tooltip('수집시간', format='%H시 %M분'), alt.Tooltip('활동유형'), alt.Tooltip('카운트')]
+    ).properties(height=350, title=f"{nick}님의 시간대별 활동 추이").add_params(zoom_selection)
 
     st.altair_chart(chart, use_container_width=True)
     
-    # 요약 통계
     u_posts = user_daily_df['작성글수'].sum()
     u_comments = user_daily_df['작성댓글수'].sum()
     st.info(f"📝 총 게시글: {u_posts}개 / 💬 총 댓글: {u_comments}개")
+
+# --- [스타일 함수] 닉네임 컬럼 강조 ---
+def highlight_nickname(val):
+    # CSS 속성: 초록색 글자, 밑줄, 굵게
+    return 'color: #09ab3b; text-decoration: underline; font-weight: bold;'
 
 
 # --- 데이터 처리 시작 ---
@@ -252,32 +236,33 @@ if not df.empty:
             st.altair_chart(chart, use_container_width=True)
             st.caption(f"💡 그래프를 **좌우로 드래그**하면 다른 날짜의 데이터도 볼 수 있습니다.")
 
-        # --- [Tab 2] 유저 랭킹 (클릭 이벤트 추가) ---
+        # --- [Tab 2] 유저 랭킹 ---
         elif selected_tab == "🏆 유저 랭킹":
-            st.subheader("🔥 Top 20 (클릭하여 상세 조회)")
+            st.subheader("🔥 Top 20 (닉네임을 클릭하여 상세 조회)")
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
             top_users = top_users.rename(columns={'유저타입': '계정타입'})
             
-            # [핵심] on_select와 selection_mode 추가
+            # [핵심] Pandas Styler를 사용하여 닉네임 컬럼 스타일링 (초록색 + 밑줄)
+            styled_df = top_users.style.map(highlight_nickname, subset=['닉네임'])
+
             event = st.dataframe(
-                top_users,
+                styled_df, # 스타일링된 데이터프레임 전달
                 column_config={"총활동수": st.column_config.ProgressColumn(format="%d", min_value=0, max_value=int(top_users['총활동수'].max()) if not top_users.empty else 100)},
                 hide_index=True, 
                 use_container_width=True,
-                on_select="rerun",  # 클릭 시 리런
-                selection_mode="single-row" # 한 줄만 선택 가능
+                on_select="rerun",  
+                selection_mode="single-row"
             )
 
-            # [핵심] 선택된 행이 있다면 모달 띄우기
             if len(event.selection.rows) > 0:
                 selected_idx = event.selection.rows[0]
                 row_data = top_users.iloc[selected_idx]
                 show_user_detail_modal(row_data['닉네임'], row_data['ID(IP)'], row_data['계정타입'], df, selected_date)
 
-        # --- [Tab 3] 유저 검색 (클릭 이벤트 추가) ---
+        # --- [Tab 3] 유저 검색 ---
         elif selected_tab == "👥 유저 검색":
-            st.subheader("🔍 유저 검색 (클릭하여 상세 조회)")
+            st.subheader("🔍 유저 검색 (닉네임을 클릭하여 상세 조회)")
             user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({'작성글수': 'sum', '작성댓글수': 'sum', '총활동수': 'sum'}).reset_index().sort_values(by='닉네임')
 
             col_search_type, col_search_input = st.columns([1.2, 4])
@@ -320,9 +305,11 @@ if not df.empty:
                 end_idx = start_idx + items_per_page
                 page_df = target_df.iloc[start_idx:end_idx].rename(columns={'유저타입': '계정타입'})
                 
-                # [핵심] on_select 추가
+                # [핵심] Pandas Styler 적용
+                styled_page_df = page_df.style.map(highlight_nickname, subset=['닉네임'])
+
                 event = st.dataframe(
-                    page_df[['닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수']],
+                    styled_page_df, # 스타일 객체 전달
                     column_config={"총활동수": st.column_config.NumberColumn(format="%d회")},
                     hide_index=True,
                     use_container_width=True,
@@ -330,10 +317,8 @@ if not df.empty:
                     selection_mode="single-row"
                 )
 
-                # [핵심] 선택 시 모달 띄우기
                 if len(event.selection.rows) > 0:
                     selected_idx = event.selection.rows[0]
-                    # 주의: 페이징된 page_df에서 선택된 인덱스를 가져와야 함
                     row_data = page_df.iloc[selected_idx]
                     show_user_detail_modal(row_data['닉네임'], row_data['ID(IP)'], row_data['계정타입'], df, selected_date)
 

@@ -11,23 +11,15 @@ from botocore.config import Config
 # --- 페이지 기본 설정 ---
 st.set_page_config(page_title="ProjectMX Dashboard", layout="wide")
 
-# --- [핵심 수정] CSS 주입: 메뉴바 숨기기 및 UI 개선 ---
+# --- CSS 주입: 표 디자인 및 버튼 스타일링 ---
 st.markdown("""
     <style>
-        /* 1. 상단 헤더 (햄버거 메뉴, Share 버튼, Deploy 버튼 등) 숨기기 */
-        header[data-testid="stHeader"] {
-            visibility: hidden;
-        }
-
-        /* 2. 하단 푸터 (Made with Streamlit) 숨기기 - 필요 없으면 주석 처리 */
-        footer {
-            visibility: hidden;
-        }
-
-        /* 3. 각 요소별 툴바(우측 상단 +버튼 등) 숨기기 */
+        /* 기본 UI 정리 */
         [data-testid="stElementToolbar"] { display: none; }
+        header[data-testid="stHeader"] { visibility: hidden; }
+        footer { visibility: hidden; }
         
-        /* 4. 라디오 버튼 스타일링 (기존 코드 유지) */
+        /* 라디오 버튼 스타일 */
         div[role="radiogroup"] label > div:first-child { display: none !important; }
         div[role="radiogroup"] label {
             background-color: #ffffff;
@@ -35,34 +27,93 @@ st.markdown("""
             border-radius: 8px !important;
             border: 1px solid #e0e0e0;
             margin-right: 10px;
-            transition: all 0.2s;
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            width: auto; 
-            min-width: 100px;
-        }
-        div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] > p {
-            text-align: center;
-            margin: 0;
-            width: 100%;
-            display: block;
-        }
-        div[role="radiogroup"] label:hover {
-            border-color: #333;
-            background-color: #f8f9fa;
         }
         div[role="radiogroup"] label:has(input:checked) {
-            background-color: #333333 !important;
-            border-color: #333333 !important;
+            background-color: #333 !important;
+            border-color: #333 !important;
             color: white !important;
         }
         div[role="radiogroup"] label:has(input:checked) p {
             color: white !important;
             font-weight: bold;
         }
-        div[data-testid="stSelectbox"] > div > div { min-height: 46px; }
+
+        /* ------------------------------------------------------- */
+        /* [핵심] 버튼을 '표 안의 텍스트'처럼 보이게 만드는 CSS */
+        /* ------------------------------------------------------- */
+        /* 버튼의 기본 배경, 테두리, 그림자 제거 */
+        .stButton > button {
+            background-color: transparent !important;
+            border: none !important;
+            padding: 0 !important;
+            color: #2E7D32 !important; /* 초록색 텍스트 */
+            text-align: left !important;
+            font-weight: 600 !important;
+            box-shadow: none !important;
+            margin: 0 !important;
+            height: auto !important;
+            min-height: 0px !important;
+            line-height: 1.5 !important;
+            display: inline-block !important;
+        }
+
+        /* 마우스 올렸을 때 */
+        .stButton > button:hover {
+            text-decoration: underline !important;
+            color: #1B5E20 !important;
+            background-color: transparent !important; /* 배경색 변화 방지 */
+            border: none !important;
+        }
+
+        /* 클릭했을 때 깜빡임 방지 */
+        .stButton > button:active,
+        .stButton > button:focus {
+            outline: none !important;
+            box-shadow: none !important;
+            color: #1B5E20 !important;
+            background-color: transparent !important;
+            border: none !important;
+        }
+        
+        /* ------------------------------------------------------- */
+        /* [테이블 디자인] 테두리가 있는 표 스타일 정의 */
+        /* ------------------------------------------------------- */
+        
+        /* 헤더 스타일 (회색 배경, 진한 테두리) */
+        .table-header-row {
+            display: flex;
+            background-color: #f0f2f6; /* Streamlit 기본 테이블 헤더색과 유사 */
+            border-top: 1px solid #d5d5d5;
+            border-bottom: 1px solid #d5d5d5;
+            padding: 8px 0px;
+            margin-bottom: 0px;
+            align-items: center;
+        }
+        .table-header-cell {
+            font-weight: 700;
+            color: #31333F;
+            font-size: 14px;
+            padding-left: 10px;
+        }
+
+        /* 데이터 행 스타일 (밑줄) */
+        .table-row {
+            border-bottom: 1px solid #e6e6e6;
+            padding: 8px 0px;
+            display: flex;
+            align-items: center;
+        }
+        
+        /* 일반 텍스트 셀 정렬 */
+        .table-cell {
+            font-size: 14px;
+            color: #31333F;
+            padding-left: 10px;
+            display: flex;
+            align-items: center;
+            height: 100%;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -71,7 +122,7 @@ st_header_col, st_space, st_date_col, st_time_col = st.columns([5, 1, 2, 3])
 with st_header_col:
     st.title("📊 블루 아카이브 갤러리 대시보드")
 
-# --- Cloudflare R2에서 데이터 가져오기 (멀티스레딩 적용) ---
+# --- Cloudflare R2 데이터 로드 ---
 @st.cache_data(ttl=300, show_spinner=False)
 def load_data_from_r2():
     try:
@@ -124,20 +175,65 @@ def load_data_from_r2():
     final_df = pd.concat(all_dfs, ignore_index=True)
     final_df['수집시간'] = pd.to_datetime(final_df['수집시간'])
 
-    # 총활동수 계산 방식 변경 (단순 합산)
     final_df['총활동수'] = final_df['작성글수'] + final_df['작성댓글수']
-    
     return final_df
 
-# --- 데이터 처리 ---
-loading_messages = [
-    "☁️ 저 구름 너머엔 무엇이 있을까요?",
-    "🏃‍♂️ 데이터가 좀 많네요. 기다려 주세요.",
-    "🔍 놓친 데이터가 존재하는지 확인 중 입니다.",
-    "💾 이 더미 데이터는 뭘까요?",
-    "🤖 삐삐쀼쀼"
-]
+# --- 유저 상세 정보 모달 ---
+@st.dialog("👤 유저 상세 활동 분석")
+def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
+    st.subheader(f"{nick} ({user_type})")
+    st.caption(f"ID(IP): {user_id} | 기준일: {target_date}")
 
+    user_daily_df = raw_df[
+        (raw_df['수집시간'].dt.date == target_date) & 
+        (raw_df['닉네임'] == nick) & 
+        (raw_df['ID(IP)'] == user_id)
+    ]
+
+    if user_daily_df.empty:
+        st.warning("선택하신 날짜에 활동 데이터가 없습니다.")
+        return
+
+    user_trend = user_daily_df.groupby('수집시간')[['작성글수', '작성댓글수']].sum().reset_index()
+    chart_data = user_trend.melt('수집시간', var_name='활동유형', value_name='카운트')
+    
+    zoom_start = pd.to_datetime(target_date)
+    zoom_end = zoom_start + pd.Timedelta(hours=23, minutes=59)
+    zoom_selection = alt.selection_interval(bind='scales', encodings=['x'])
+
+    chart = alt.Chart(chart_data).mark_line(point=True).encode(
+        x=alt.X(
+            '수집시간', 
+            axis=alt.Axis(format='%H시', title='시간', tickCount=12),
+            scale=alt.Scale(domain=[zoom_start, zoom_end])
+        ),
+        y=alt.Y('카운트', title='활동 수', scale=alt.Scale(zero=True, domainMin=0)),
+        color=alt.Color(
+            '활동유형', 
+            legend=alt.Legend(title="활동"),
+            scale=alt.Scale(domain=['작성글수', '작성댓글수'], range=['green', 'blue'])
+        ),
+        tooltip=[
+            alt.Tooltip('수집시간', format='%H시 %M분'),
+            alt.Tooltip('활동유형'),
+            alt.Tooltip('카운트')
+        ]
+    ).properties(
+        height=350,
+        title=f"{nick}님의 시간대별 활동 추이"
+    ).add_params(
+        zoom_selection
+    )
+
+    st.altair_chart(chart, use_container_width=True)
+    
+    u_posts = user_daily_df['작성글수'].sum()
+    u_comments = user_daily_df['작성댓글수'].sum()
+    st.info(f"📝 총 게시글: {u_posts}개 / 💬 총 댓글: {u_comments}개")
+
+
+# --- 메인 실행 ---
+loading_messages = ["☁️ 데이터 로딩 중...", "🏃‍♂️ 열심히 가져오는 중...", "🔍 분석 중...", "💾 잠시만요...", "🤖 삐삐쀼쀼"]
 loading_text = random.choice(loading_messages)
 
 with st.spinner(loading_text):
@@ -147,20 +243,12 @@ if not df.empty:
     min_date = df['수집시간'].dt.date.min()
     max_date = df['수집시간'].dt.date.max()
 
-    # --- 우측 상단 필터 UI ---
     with st_date_col:
-        selected_date = st.date_input(
-            "📅 날짜 선택",
-            value=max_date, min_value=min_date, max_value=max_date
-        )
+        selected_date = st.date_input("📅 날짜 선택", value=max_date, min_value=min_date, max_value=max_date)
 
     with st_time_col:
-        start_hour, end_hour = st.slider(
-            "⏰ 시간대 선택",
-            0, 24, (0, 24), step=1, format="%d시"
-        )
+        start_hour, end_hour = st.slider("⏰ 시간대 선택", 0, 24, (0, 24), step=1, format="%d시")
 
-    # --- 데이터 필터링 로직 ---
     day_filtered_df = df[df['수집시간'].dt.date == selected_date]
     
     if end_hour == 24:
@@ -173,13 +261,9 @@ if not df.empty:
 
     st.markdown("---")
 
-    # --- [메인 메뉴] ---
     selected_tab = st.radio(
-        "메뉴 선택", 
-        ["📈 데이터 상세", "🏆 유저 랭킹", "👥 유저 검색"],
-        horizontal=True,
-        key="main_menu",
-        label_visibility="collapsed"
+        "메뉴 선택", ["📈 데이터 상세", "🏆 유저 랭킹", "👥 유저 검색"],
+        horizontal=True, key="main_menu", label_visibility="collapsed"
     )
     
     st.markdown(" ") 
@@ -187,7 +271,7 @@ if not df.empty:
     if filtered_df.empty:
         st.warning(f"⚠️ {selected_date} 해당 시간대에 데이터가 없습니다.")
     else:
-        # --- [Tab 1] 시간대별 그래프 ---
+        # --- [Tab 1] 데이터 상세 ---
         if selected_tab == "📈 데이터 상세":
             total_posts = filtered_df['작성글수'].sum()
             total_comments = filtered_df['작성댓글수'].sum()
@@ -204,122 +288,92 @@ if not df.empty:
             trend_stats = df.groupby('수집시간')[['작성글수', '작성댓글수']].sum().reset_index()
             trend_users = df.groupby(['수집시간', '닉네임', 'ID(IP)', '유저타입']).size().reset_index().groupby('수집시간').size().reset_index(name='액티브수')
             full_trend_df = pd.merge(trend_stats, trend_users, on='수집시간', how='left').fillna(0)
-
-            chart_data = full_trend_df.melt(
-                '수집시간', 
-                var_name='활동유형', 
-                value_name='카운트'
-            )
+            chart_data = full_trend_df.melt('수집시간', var_name='활동유형', value_name='카운트')
+            
             zoom_start = pd.to_datetime(selected_date)
             zoom_end = zoom_start + pd.Timedelta(hours=23, minutes=59)
-
-            # 그래프 조작성 개선 (X축 스케일 바인딩)
             zoom_selection = alt.selection_interval(bind='scales', encodings=['x'])
 
             chart = alt.Chart(chart_data).mark_line(point=True).encode(
-                x=alt.X(
-                    '수집시간', 
-                    axis=alt.Axis(format='%m월 %d일 %H시', title='시간', tickCount=10),
-                    scale=alt.Scale(domain=[zoom_start, zoom_end])
-                ),
-                y=alt.Y(
-                    '카운트', 
-                    title='활동 수',
-                    scale=alt.Scale(zero=True)
-                ),
-                color=alt.Color(
-                    '활동유형', 
-                    legend=alt.Legend(title="지표"),
-                    scale=alt.Scale(
-                        domain=['액티브수', '작성글수', '작성댓글수'],
-                        range=['red', 'green', 'blue']
-                    )
-                ),
-                tooltip=[
-                    alt.Tooltip('수집시간', format='%Y-%m-%d %H:%M'),
-                    alt.Tooltip('활동유형'),
-                    alt.Tooltip('카운트')
-                ]
-            ).properties(
-                height=450,
-            ).add_params(
-                zoom_selection
-            )
+                x=alt.X('수집시간', axis=alt.Axis(format='%m월 %d일 %H시', title='시간', tickCount=10), scale=alt.Scale(domain=[zoom_start, zoom_end])),
+                y=alt.Y('카운트', title='활동 수', scale=alt.Scale(zero=True)),
+                color=alt.Color('활동유형', legend=alt.Legend(title="지표"), scale=alt.Scale(domain=['액티브수', '작성글수', '작성댓글수'], range=['red', 'green', 'blue'])),
+                tooltip=[alt.Tooltip('수집시간', format='%Y-%m-%d %H:%M'), alt.Tooltip('활동유형'), alt.Tooltip('카운트')]
+            ).properties(height=450).add_params(zoom_selection)
 
             st.altair_chart(chart, use_container_width=True)
-            st.caption(f"💡 그래프를 **좌우로 드래그**하면 다른 날짜의 데이터도 볼 수 있습니다. (마우스 휠로 줌인/줌아웃 가능)")
+            st.caption(f"💡 그래프를 **좌우로 드래그**하면 다른 날짜의 데이터도 볼 수 있습니다.")
 
-
-        # --- [Tab 2] 활동왕 랭킹 ---
+        # --- [Tab 2] 유저 랭킹 (표 모양 레이아웃 + 버튼) ---
         elif selected_tab == "🏆 유저 랭킹":
             st.subheader("🔥 Top 20")
+            st.caption("닉네임(초록색)을 클릭하면 상세 그래프가 나타납니다.")
+
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
-            
-            top_users = top_users.rename(columns={
-                '유저타입': '계정타입'
-            })
-            
-            st.dataframe(
-                top_users,
-                column_config={
-                    "총활동수": st.column_config.ProgressColumn(format="%d", min_value=0, max_value=int(top_users['총활동수'].max()) if not top_users.empty else 100),
-                },
-                hide_index=True, use_container_width=True
-            )
 
-        # --- [Tab 3] 전체 유저 일람 ---
+            # 1. 헤더 (표처럼 보이게 스타일링)
+            # 비율: 순위(0.8) 닉네임(3) ID(2) 계정(1.5) 활동수(1.5) 글/댓(2)
+            col_ratio = [0.8, 3, 2, 1.5, 1.5, 2]
+            
+            st.markdown("""
+                <div class="table-header-row">
+                    <div style="flex: 0.8;" class="table-header-cell">순위</div>
+                    <div style="flex: 3;" class="table-header-cell">닉네임 (클릭)</div>
+                    <div style="flex: 2;" class="table-header-cell">ID(IP)</div>
+                    <div style="flex: 1.5;" class="table-header-cell">계정</div>
+                    <div style="flex: 1.5;" class="table-header-cell">활동수</div>
+                    <div style="flex: 2;" class="table-header-cell">글 / 댓</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # 2. 데이터 행 (루프)
+            for idx, (index, row) in enumerate(top_users.iterrows()):
+                # 행 전체를 감싸는 컨테이너 (시각적 구분용)
+                row_container = st.container()
+                with row_container:
+                    cols = st.columns(col_ratio)
+                    
+                    # [순위]
+                    cols[0].markdown(f"<div class='table-cell'><b>{idx+1}</b></div>", unsafe_allow_html=True)
+                    
+                    # [닉네임 - 버튼]
+                    # CSS 덕분에 버튼 모양이 사라지고 텍스트처럼 보임
+                    if cols[1].button(f"{row['닉네임']}", key=f"rank_{idx}", use_container_width=True):
+                        show_user_detail_modal(row['닉네임'], row['ID(IP)'], row['유저타입'], df, selected_date)
+                    
+                    # [나머지 데이터]
+                    cols[2].markdown(f"<div class='table-cell'>{row['ID(IP)']}</div>", unsafe_allow_html=True)
+                    cols[3].markdown(f"<div class='table-cell'>{row['유저타입']}</div>", unsafe_allow_html=True)
+                    cols[4].markdown(f"<div class='table-cell'><b>{row['총활동수']}</b></div>", unsafe_allow_html=True)
+                    cols[5].markdown(f"<div class='table-cell'>{row['작성글수']} / {row['작성댓글수']}</div>", unsafe_allow_html=True)
+                
+                # 행 구분선 (Border Bottom)
+                st.markdown("<div style='border-bottom: 1px solid #e6e6e6; margin-bottom: 0px;'></div>", unsafe_allow_html=True)
+
+
+        # --- [Tab 3] 유저 검색 (표 모양 레이아웃 + 버튼) ---
         elif selected_tab == "👥 유저 검색":
-            st.subheader("🔍 유저 검색 및 전체 목록")
+            st.subheader("🔍 유저 검색")
+            st.caption("닉네임(초록색)을 클릭하면 상세 그래프가 나타납니다.")
 
-            user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({
-                '작성글수': 'sum',
-                '작성댓글수': 'sum',
-                '총활동수': 'sum'
-            }).reset_index()
-            user_list_df = user_list_df.sort_values(by='닉네임', ascending=True)
+            user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({'작성글수': 'sum', '작성댓글수': 'sum', '총활동수': 'sum'}).reset_index().sort_values(by='닉네임')
 
             col_search_type, col_search_input = st.columns([1.2, 4])
             
             def clear_search_box():
-                if 'user_search_box' in st.session_state:
-                    st.session_state.user_search_box = None
+                if 'user_search_box' in st.session_state: st.session_state.user_search_box = None
 
             with col_search_type:
-                st.markdown("**검색 기준**")
-                search_type = st.radio(
-                    "검색 기준 라벨",
-                    ["닉네임", "ID(IP)"],
-                    horizontal=True,
-                    on_change=clear_search_box,
-                    label_visibility="collapsed"
-                )
-
+                search_type = st.radio("검색 기준", ["닉네임", "ID(IP)"], horizontal=True, on_change=clear_search_box, label_visibility="collapsed")
             with col_search_input:
-                if search_type == "닉네임":
-                    st.markdown("**닉네임 검색** (자동완성)")
-                    options = user_list_df['닉네임'].unique().tolist()
-                    placeholder_text = "닉네임을 입력하세요"
-                else:
-                    st.markdown("**ID(IP) 검색** (자동완성)")
-                    options = user_list_df['ID(IP)'].unique().tolist()
-                    placeholder_text = "ID(IP)를 입력하세요"
-
-                search_query = st.selectbox(
-                    label="검색어 입력",
-                    options=options,
-                    index=None,
-                    placeholder=placeholder_text,
-                    key="user_search_box",
-                    label_visibility="collapsed"
-                )
+                options = user_list_df['닉네임'].unique().tolist() if search_type == "닉네임" else user_list_df['ID(IP)'].unique().tolist()
+                placeholder = "닉네임 입력" if search_type == "닉네임" else "ID(IP) 입력"
+                search_query = st.selectbox("검색어", options, index=None, placeholder=placeholder, key="user_search_box", label_visibility="collapsed")
 
             target_df = user_list_df
             if search_query:
-                if search_type == "닉네임":
-                    target_df = user_list_df[user_list_df['닉네임'] == search_query]
-                else:
-                    target_df = user_list_df[user_list_df['ID(IP)'] == search_query]
+                target_df = target_df[target_df['닉네임'] == search_query] if search_type == "닉네임" else target_df[target_df['ID(IP)'] == search_query]
 
             if target_df.empty:
                 st.info("검색 결과가 없습니다.")
@@ -328,47 +382,54 @@ if not df.empty:
                 total_items = len(target_df)
                 total_pages = math.ceil(total_items / items_per_page)
 
-                if 'user_page' not in st.session_state:
-                    st.session_state.user_page = 1
-                if st.session_state.user_page > total_pages:
-                    st.session_state.user_page = 1
+                if 'user_page' not in st.session_state: st.session_state.user_page = 1
+                if st.session_state.user_page > total_pages: st.session_state.user_page = 1
 
                 if total_pages > 1:
-                    col_info, col_prev, col_next = st.columns([8.5, 0.75, 0.75])
-                    with col_info:
-                        st.markdown(f"<div style='padding-top: 5px;'><b>{st.session_state.user_page}</b> / {total_pages} 페이지 (총 {total_items}명)</div>", unsafe_allow_html=True)
-                    with col_prev:
-                        if st.button("◀ 이전", use_container_width=True):
-                            if st.session_state.user_page > 1:
-                                st.session_state.user_page -= 1
-                                st.rerun()
-                    with col_next:
-                        if st.button("다음 ▶", use_container_width=True):
-                            if st.session_state.user_page < total_pages:
-                                st.session_state.user_page += 1
-                                st.rerun()
-                else:
-                    st.write(f"총 {total_items}명")
+                    c1, c2, c3 = st.columns([8.5, 0.75, 0.75])
+                    c1.markdown(f"<div style='padding-top: 5px;'><b>{st.session_state.user_page}</b> / {total_pages} 페이지</div>", unsafe_allow_html=True)
+                    if c2.button("◀", use_container_width=True) and st.session_state.user_page > 1:
+                        st.session_state.user_page -= 1
+                        st.rerun()
+                    if c3.button("▶", use_container_width=True) and st.session_state.user_page < total_pages:
+                        st.session_state.user_page += 1
+                        st.rerun()
+                
+                st.markdown("---")
 
-                current_page = st.session_state.user_page
-                start_idx = (current_page - 1) * items_per_page
+                start_idx = (st.session_state.user_page - 1) * items_per_page
                 end_idx = start_idx + items_per_page
                 page_df = target_df.iloc[start_idx:end_idx]
-                
-                page_df = page_df.rename(columns={
-                    '유저타입': '계정타입'
-                })
-                
-                display_columns = ['닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수']
 
-                st.dataframe(
-                    page_df[display_columns],
-                    column_config={
-                        "총활동수": st.column_config.NumberColumn(format="%d회"),
-                    },
-                    hide_index=True,
-                    use_container_width=True
-                )
+                # [표 헤더]
+                # 비율: 닉네임(2.5) ID(2) 계정(1.5) 활동수(1.5) 글/댓(2)
+                col_ratio = [2.5, 2, 1.5, 1.5, 2]
+
+                st.markdown("""
+                    <div class="table-header-row">
+                        <div style="flex: 2.5;" class="table-header-cell">닉네임 (클릭)</div>
+                        <div style="flex: 2;" class="table-header-cell">ID(IP)</div>
+                        <div style="flex: 1.5;" class="table-header-cell">계정</div>
+                        <div style="flex: 1.5;" class="table-header-cell">활동수</div>
+                        <div style="flex: 2;" class="table-header-cell">글 / 댓</div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+                # [표 내용]
+                for idx, (index, row) in enumerate(page_df.iterrows()):
+                    with st.container():
+                        cols = st.columns(col_ratio)
+                        
+                        # [닉네임 - 버튼]
+                        if cols[0].button(f"{row['닉네임']}", key=f"search_{idx}", use_container_width=True):
+                            show_user_detail_modal(row['닉네임'], row['ID(IP)'], row['유저타입'], df, selected_date)
+                        
+                        cols[1].markdown(f"<div class='table-cell'>{row['ID(IP)']}</div>", unsafe_allow_html=True)
+                        cols[2].markdown(f"<div class='table-cell'>{row['유저타입']}</div>", unsafe_allow_html=True)
+                        cols[3].markdown(f"<div class='table-cell'><b>{row['총활동수']}</b></div>", unsafe_allow_html=True)
+                        cols[4].markdown(f"<div class='table-cell'>{row['작성글수']} / {row['작성댓글수']}</div>", unsafe_allow_html=True)
+                    
+                    st.markdown("<div style='border-bottom: 1px solid #e6e6e6; margin-bottom: 0px;'></div>", unsafe_allow_html=True)
 
 else:
     st.info("데이터 로딩 중... (데이터가 없거나 R2 연결을 확인해주세요)")

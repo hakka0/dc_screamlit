@@ -54,6 +54,22 @@ st.markdown("""
         
         header[data-testid="stHeader"] { visibility: hidden; }
         footer { visibility: hidden; }
+
+        /* [추가] 리스트 헤더 스타일 */
+        .list-header {
+            font-weight: bold;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 5px;
+            margin-bottom: 10px;
+            color: #555;
+        }
+        /* [추가] 리스트 아이템 정렬 */
+        .list-item {
+            display: flex;
+            align-items: center;
+            height: 100%;
+            padding-top: 15px; /* 버튼 높이와 텍스트 줄맞춤 */
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -171,7 +187,6 @@ def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
     u_comments = user_daily_df['작성댓글수'].sum()
     st.info(f"📝 총 게시글: {u_posts}개 / 💬 총 댓글: {u_comments}개")
 
-
 # --- 메인 실행 ---
 loading_messages = ["☁️ 데이터 로딩 중...", "🏃‍♂️ 열심히 가져오는 중...", "🔍 분석 중...", "💾 잠시만요...", "🤖 삐삐쀼쀼"]
 loading_text = random.choice(loading_messages)
@@ -244,32 +259,49 @@ if not df.empty:
             st.altair_chart(chart, use_container_width=True)
             st.caption(f"💡 그래프를 **좌우로 드래그**하면 다른 날짜의 데이터도 볼 수 있습니다.")
 
-        # --- [Tab 2] 유저 랭킹 ---
+        # --- [Tab 2] 유저 랭킹 (버튼 리스트 방식) ---
         elif selected_tab == "🏆 유저 랭킹":
-            st.subheader("🔥 Top 20 (이름을 클릭하여 상세 조회)")
+            st.subheader("🔥 Top 20")
+            st.markdown("닉네임 버튼을 클릭하면 상세 정보를 볼 수 있습니다.")
+            st.markdown("---")
+
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
-            top_users = top_users.rename(columns={'유저타입': '계정타입'})
-            
-            # [수정] key 추가 및 on_select 작동 보장
-            event = st.dataframe(
-                top_users,
-                column_config={"총활동수": st.column_config.ProgressColumn(format="%d", min_value=0, max_value=int(top_users['총활동수'].max()) if not top_users.empty else 100)},
-                hide_index=True, 
-                use_container_width=True,
-                on_select="rerun",
-                selection_mode="single-row",
-                key="ranking_table"  # key 추가로 상태 손실 방지
-            )
 
-            if len(event.selection.rows) > 0:
-                selected_idx = event.selection.rows[0]
-                row_data = top_users.iloc[selected_idx]
-                show_user_detail_modal(row_data['닉네임'], row_data['ID(IP)'], row_data['계정타입'], df, selected_date)
+            # [헤더]
+            h1, h2, h3, h4, h5, h6 = st.columns([1, 2.5, 2, 1.5, 1.5, 1.5])
+            h1.markdown("<div class='list-header'>순위</div>", unsafe_allow_html=True)
+            h2.markdown("<div class='list-header'>닉네임 (클릭)</div>", unsafe_allow_html=True)
+            h3.markdown("<div class='list-header'>ID(IP)</div>", unsafe_allow_html=True)
+            h4.markdown("<div class='list-header'>계정</div>", unsafe_allow_html=True)
+            h5.markdown("<div class='list-header'>활동수</div>", unsafe_allow_html=True)
+            h6.markdown("<div class='list-header'>상세</div>", unsafe_allow_html=True)
 
-        # --- [Tab 3] 유저 검색 ---
+            # [리스트 출력]
+            for idx, (index, row) in enumerate(top_users.iterrows()):
+                c1, c2, c3, c4, c5, c6 = st.columns([1, 2.5, 2, 1.5, 1.5, 1.5])
+                
+                # 순위
+                c1.markdown(f"<div class='list-item'><b>{idx+1}</b></div>", unsafe_allow_html=True)
+                
+                # [핵심] 닉네임 버튼 (누르면 모달 실행)
+                if c2.button(f"{row['닉네임']}", key=f"rank_btn_{idx}", use_container_width=True):
+                    show_user_detail_modal(row['닉네임'], row['ID(IP)'], row['유저타입'], df, selected_date)
+                
+                # 정보들 (수직 정렬을 위해 div 감싸기)
+                c3.markdown(f"<div class='list-item'>{row['ID(IP)']}</div>", unsafe_allow_html=True)
+                c4.markdown(f"<div class='list-item'>{row['유저타입']}</div>", unsafe_allow_html=True)
+                c5.markdown(f"<div class='list-item'>{row['총활동수']}회</div>", unsafe_allow_html=True)
+                c6.markdown(f"<div class='list-item'>{row['작성글수']}글 / {row['작성댓글수']}댓</div>", unsafe_allow_html=True)
+                
+                st.markdown("<hr style='margin: 5px 0; opacity: 0.3;'>", unsafe_allow_html=True)
+
+
+        # --- [Tab 3] 유저 검색 (버튼 리스트 방식) ---
         elif selected_tab == "👥 유저 검색":
-            st.subheader("🔍 유저 검색 (이름을 클릭하여 상세 조회)")
+            st.subheader("🔍 유저 검색")
+            st.markdown("닉네임 버튼을 클릭하면 상세 정보를 볼 수 있습니다.")
+
             user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({'작성글수': 'sum', '작성댓글수': 'sum', '총활동수': 'sum'}).reset_index().sort_values(by='닉네임')
 
             col_search_type, col_search_input = st.columns([1.2, 4])
@@ -307,26 +339,35 @@ if not df.empty:
                     if c3.button("▶", use_container_width=True) and st.session_state.user_page < total_pages:
                         st.session_state.user_page += 1
                         st.rerun()
+                
+                st.markdown("---")
 
                 start_idx = (st.session_state.user_page - 1) * items_per_page
                 end_idx = start_idx + items_per_page
-                page_df = target_df.iloc[start_idx:end_idx].rename(columns={'유저타입': '계정타입'})
-                
-                # [수정] key 추가 및 on_select 작동 보장
-                event = st.dataframe(
-                    page_df[['닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수']],
-                    column_config={"총활동수": st.column_config.NumberColumn(format="%d회")},
-                    hide_index=True,
-                    use_container_width=True,
-                    on_select="rerun",
-                    selection_mode="single-row",
-                    key="search_table" # key 추가로 상태 손실 방지
-                )
+                page_df = target_df.iloc[start_idx:end_idx]
 
-                if len(event.selection.rows) > 0:
-                    selected_idx = event.selection.rows[0]
-                    row_data = page_df.iloc[selected_idx]
-                    show_user_detail_modal(row_data['닉네임'], row_data['ID(IP)'], row_data['계정타입'], df, selected_date)
+                # [헤더]
+                h1, h2, h3, h4, h5 = st.columns([2.5, 2, 1.5, 1.5, 2])
+                h1.markdown("<div class='list-header'>닉네임 (클릭)</div>", unsafe_allow_html=True)
+                h2.markdown("<div class='list-header'>ID(IP)</div>", unsafe_allow_html=True)
+                h3.markdown("<div class='list-header'>계정</div>", unsafe_allow_html=True)
+                h4.markdown("<div class='list-header'>활동수</div>", unsafe_allow_html=True)
+                h5.markdown("<div class='list-header'>상세</div>", unsafe_allow_html=True)
+
+                # [리스트 출력]
+                for idx, (index, row) in enumerate(page_df.iterrows()):
+                    c1, c2, c3, c4, c5 = st.columns([2.5, 2, 1.5, 1.5, 2])
+                    
+                    # [핵심] 닉네임 버튼
+                    if c1.button(f"{row['닉네임']}", key=f"search_btn_{idx}", use_container_width=True):
+                        show_user_detail_modal(row['닉네임'], row['ID(IP)'], row['유저타입'], df, selected_date)
+                    
+                    c2.markdown(f"<div class='list-item'>{row['ID(IP)']}</div>", unsafe_allow_html=True)
+                    c3.markdown(f"<div class='list-item'>{row['유저타입']}</div>", unsafe_allow_html=True)
+                    c4.markdown(f"<div class='list-item'>{row['총활동수']}회</div>", unsafe_allow_html=True)
+                    c5.markdown(f"<div class='list-item'>{row['작성글수']}글 / {row['작성댓글수']}댓</div>", unsafe_allow_html=True)
+                    
+                    st.markdown("<hr style='margin: 5px 0; opacity: 0.3;'>", unsafe_allow_html=True)
 
 else:
     st.info("데이터 로딩 중... (데이터가 없거나 R2 연결을 확인해주세요)")

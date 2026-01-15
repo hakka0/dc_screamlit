@@ -11,15 +11,23 @@ from botocore.config import Config
 # --- 페이지 기본 설정 ---
 st.set_page_config(page_title="ProjectMX Dashboard", layout="wide")
 
-# --- CSS 주입: 완벽한 표 디자인 구현 ---
+# --- CSS 주입: UI 개선 (버튼 해킹 CSS 제거, 기본 스타일 유지) ---
 st.markdown("""
     <style>
-        /* 기본 UI 정리 */
+        /* 1. 상단 헤더 숨기기 */
+        header[data-testid="stHeader"] {
+            visibility: hidden;
+        }
+
+        /* 2. 하단 푸터 숨기기 */
+        footer {
+            visibility: hidden;
+        }
+
+        /* 3. 툴바 숨기기 */
         [data-testid="stElementToolbar"] { display: none; }
-        header[data-testid="stHeader"] { visibility: hidden; }
-        footer { visibility: hidden; }
         
-        /* 라디오 버튼 스타일 */
+        /* 4. 라디오 버튼 스타일링 */
         div[role="radiogroup"] label > div:first-child { display: none !important; }
         div[role="radiogroup"] label {
             background-color: #ffffff;
@@ -27,93 +35,34 @@ st.markdown("""
             border-radius: 8px !important;
             border: 1px solid #e0e0e0;
             margin-right: 10px;
+            transition: all 0.2s;
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: auto; 
+            min-width: 100px;
+        }
+        div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] > p {
+            text-align: center;
+            margin: 0;
+            width: 100%;
+            display: block;
+        }
+        div[role="radiogroup"] label:hover {
+            border-color: #333;
+            background-color: #f8f9fa;
         }
         div[role="radiogroup"] label:has(input:checked) {
-            background-color: #333 !important;
-            border-color: #333 !important;
+            background-color: #333333 !important;
+            border-color: #333333 !important;
             color: white !important;
         }
         div[role="radiogroup"] label:has(input:checked) p {
             color: white !important;
             font-weight: bold;
         }
-
-        /* ------------------------------------------------------- */
-        /* [Fake Table] 표 디자인 CSS (세로줄 포함) */
-        /* ------------------------------------------------------- */
-        
-        /* 1. 헤더 스타일 */
-        .table-header {
-            background-color: #f0f2f6;
-            border-top: 1px solid #d5d8dc;
-            border-bottom: 1px solid #d5d8dc;
-            padding: 12px 0;
-            font-weight: 700;
-            color: #31333F;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        /* 2. 데이터 행 스타일 */
-        .table-row {
-            border-bottom: 1px solid #e6e9ef;
-            padding: 6px 0;
-            display: flex;
-            align-items: center;
-            transition: background-color 0.1s;
-        }
-        .table-row:hover {
-            background-color: #f9f9f9;
-        }
-
-        /* 3. 셀 내용 스타일 (세로줄 구현) */
-        .table-cell {
-            font-size: 14px;
-            color: #444;
-            display: flex;
-            align-items: center;
-            justify-content: center; /* 가운데 정렬 */
-            height: 100%;
-            border-right: 1px solid #e6e9ef; /* 세로 구분선 */
-            padding: 0 5px;
-        }
-        
-        /* 마지막 셀은 오른쪽 테두리 제거 */
-        .table-cell:last-child {
-            border-right: none;
-        }
-
-        /* 4. 버튼 스타일링 (닉네임) */
-        div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] button {
-            background-color: transparent !important;
-            border: none !important;
-            padding: 0 !important;
-            color: #2E7D32 !important; /* 초록색 */
-            font-weight: 600 !important;
-            box-shadow: none !important;
-            margin: 0 !important;
-            height: auto !important;
-            width: 100%;
-            text-align: center !important; /* 닉네임 가운데 정렬 */
-        }
-        div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] button:hover {
-            text-decoration: underline !important;
-            color: #1B5E20 !important;
-        }
-        div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] button:active,
-        div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] button:focus {
-            outline: none !important;
-            box-shadow: none !important;
-            color: #1B5E20 !important;
-        }
-        
-        /* Streamlit 컬럼 간격 최소화 보정 */
-        [data-testid="column"] {
-            padding: 0 !important;
-        }
+        div[data-testid="stSelectbox"] > div > div { min-height: 46px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -122,7 +71,7 @@ st_header_col, st_space, st_date_col, st_time_col = st.columns([5, 1, 2, 3])
 with st_header_col:
     st.title("📊 블루 아카이브 갤러리 대시보드")
 
-# --- Cloudflare R2 데이터 로드 ---
+# --- Cloudflare R2에서 데이터 가져오기 ---
 @st.cache_data(ttl=300, show_spinner=False)
 def load_data_from_r2():
     try:
@@ -176,6 +125,7 @@ def load_data_from_r2():
     final_df['수집시간'] = pd.to_datetime(final_df['수집시간'])
 
     final_df['총활동수'] = final_df['작성글수'] + final_df['작성댓글수']
+    
     return final_df
 
 # --- 유저 상세 정보 모달 ---
@@ -231,8 +181,15 @@ def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
     u_comments = user_daily_df['작성댓글수'].sum()
     st.info(f"📝 총 게시글: {u_posts}개 / 💬 총 댓글: {u_comments}개")
 
-# --- 메인 실행 ---
-loading_messages = ["☁️ 데이터 로딩 중...", "🏃‍♂️ 열심히 가져오는 중...", "🔍 분석 중...", "💾 잠시만요...", "🤖 삐삐쀼쀼"]
+# --- 데이터 처리 ---
+loading_messages = [
+    "☁️ 저 구름 너머엔 무엇이 있을까요?",
+    "🏃‍♂️ 데이터가 좀 많네요. 기다려 주세요.",
+    "🔍 놓친 데이터가 존재하는지 확인 중 입니다.",
+    "💾 이 더미 데이터는 뭘까요?",
+    "🤖 삐삐쀼쀼"
+]
+
 loading_text = random.choice(loading_messages)
 
 with st.spinner(loading_text):
@@ -270,7 +227,7 @@ if not df.empty:
     if filtered_df.empty:
         st.warning(f"⚠️ {selected_date} 해당 시간대에 데이터가 없습니다.")
     else:
-        # --- [Tab 1] 데이터 상세 ---
+        # --- [Tab 1] 시간대별 그래프 ---
         if selected_tab == "📈 데이터 상세":
             total_posts = filtered_df['작성글수'].sum()
             total_comments = filtered_df['작성댓글수'].sum()
@@ -287,8 +244,8 @@ if not df.empty:
             trend_stats = df.groupby('수집시간')[['작성글수', '작성댓글수']].sum().reset_index()
             trend_users = df.groupby(['수집시간', '닉네임', 'ID(IP)', '유저타입']).size().reset_index().groupby('수집시간').size().reset_index(name='액티브수')
             full_trend_df = pd.merge(trend_stats, trend_users, on='수집시간', how='left').fillna(0)
+
             chart_data = full_trend_df.melt('수집시간', var_name='활동유형', value_name='카운트')
-            
             zoom_start = pd.to_datetime(selected_date)
             zoom_end = zoom_start + pd.Timedelta(hours=23, minutes=59)
             zoom_selection = alt.selection_interval(bind='scales', encodings=['x'])
@@ -303,57 +260,57 @@ if not df.empty:
             st.altair_chart(chart, use_container_width=True)
             st.caption(f"💡 그래프를 **좌우로 드래그**하면 다른 날짜의 데이터도 볼 수 있습니다.")
 
-        # --- [Tab 2] 유저 랭킹 (CSS Fake Table) ---
+
+        # --- [Tab 2] 활동왕 랭킹 (행 선택 방식) ---
         elif selected_tab == "🏆 유저 랭킹":
             st.subheader("🔥 Top 20")
-            st.caption("닉네임을 클릭하면 상세 정보를 볼 수 있습니다.")
+            st.caption("표의 행을 클릭하면 상세 그래프가 나타납니다.")
 
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
-
-            # [헤더 출력]
-            col_widths = [1, 3, 2.5, 1.5, 1.5, 2]
-            header_cols = st.columns(col_widths)
-            headers = ["순위", "닉네임", "ID(IP)", "계정", "활동", "글 / 댓"]
             
-            for col, text in zip(header_cols, headers):
-                col.markdown(f"<div class='table-header'>{text}</div>", unsafe_allow_html=True)
+            top_users = top_users.rename(columns={'유저타입': '계정타입'})
+            
+            # [핵심] on_select를 사용하여 행 선택 활성화
+            event = st.dataframe(
+                top_users,
+                column_config={
+                    "총활동수": st.column_config.NumberColumn(format="%d회"),
+                },
+                hide_index=True,
+                use_container_width=True,
+                on_select="rerun",          # 선택 시 리런
+                selection_mode="single-row" # 한 줄만 선택 가능
+            )
 
-            # [데이터 출력]
-            for idx, (index, row) in enumerate(top_users.iterrows()):
-                cols = st.columns(col_widths)
-                
-                # 순위
-                cols[0].markdown(f"<div class='table-cell'><b>{idx+1}</b></div>", unsafe_allow_html=True)
-                
-                # 닉네임 (버튼) - CSS로 가운데 정렬 및 초록색 처리됨
-                if cols[1].button(f"{row['닉네임']}", key=f"rank_{idx}", use_container_width=True):
-                    show_user_detail_modal(row['닉네임'], row['ID(IP)'], row['유저타입'], df, selected_date)
-                
-                # 나머지 데이터 (세로줄 div 포함)
-                cols[2].markdown(f"<div class='table-cell'>{row['ID(IP)']}</div>", unsafe_allow_html=True)
-                cols[3].markdown(f"<div class='table-cell'>{row['유저타입']}</div>", unsafe_allow_html=True)
-                cols[4].markdown(f"<div class='table-cell'><b>{row['총활동수']}</b></div>", unsafe_allow_html=True)
-                cols[5].markdown(f"<div class='table-cell' style='border-right: none;'>{row['작성글수']} / {row['작성댓글수']}</div>", unsafe_allow_html=True)
-                
-                # 행 구분선
-                st.markdown("<div style='border-bottom: 1px solid #e0e0e0; margin-bottom: 0px;'></div>", unsafe_allow_html=True)
+            # [이벤트 처리] 선택된 행이 있으면 모달 띄우기
+            if len(event.selection.rows) > 0:
+                selected_index = event.selection.rows[0]
+                row = top_users.iloc[selected_index]
+                show_user_detail_modal(row['닉네임'], row['ID(IP)'], row['계정타입'], df, selected_date)
 
 
-        # --- [Tab 3] 유저 검색 (CSS Fake Table) ---
+        # --- [Tab 3] 전체 유저 일람 (행 선택 방식) ---
         elif selected_tab == "👥 유저 검색":
-            st.subheader("🔍 유저 검색")
-            st.caption("닉네임을 클릭하면 상세 정보를 볼 수 있습니다.")
+            st.subheader("🔍 유저 검색 및 전체 목록")
+            st.caption("표의 행을 클릭하면 상세 그래프가 나타납니다.")
 
-            user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({'작성글수': 'sum', '작성댓글수': 'sum', '총활동수': 'sum'}).reset_index().sort_values(by='닉네임')
+            user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({
+                '작성글수': 'sum',
+                '작성댓글수': 'sum',
+                '총활동수': 'sum'
+            }).reset_index()
+            user_list_df = user_list_df.sort_values(by='닉네임', ascending=True)
 
             col_search_type, col_search_input = st.columns([1.2, 4])
             
             def clear_search_box():
-                if 'user_search_box' in st.session_state: st.session_state.user_search_box = None
+                if 'user_search_box' in st.session_state:
+                    st.session_state.user_search_box = None
 
             with col_search_type:
                 search_type = st.radio("검색 기준", ["닉네임", "ID(IP)"], horizontal=True, on_change=clear_search_box, label_visibility="collapsed")
+
             with col_search_input:
                 options = user_list_df['닉네임'].unique().tolist() if search_type == "닉네임" else user_list_df['ID(IP)'].unique().tolist()
                 placeholder = "닉네임 입력" if search_type == "닉네임" else "ID(IP) 입력"
@@ -375,39 +332,42 @@ if not df.empty:
 
                 if total_pages > 1:
                     c1, c2, c3 = st.columns([8.5, 0.75, 0.75])
-                    c1.markdown(f"<div style='padding-top: 5px;'><b>{st.session_state.user_page}</b> / {total_pages} 페이지</div>", unsafe_allow_html=True)
+                    c1.markdown(f"<div style='padding-top: 5px;'><b>{st.session_state.user_page}</b> / {total_pages} 페이지 (총 {total_items}명)</div>", unsafe_allow_html=True)
                     if c2.button("◀", use_container_width=True) and st.session_state.user_page > 1:
                         st.session_state.user_page -= 1
                         st.rerun()
                     if c3.button("▶", use_container_width=True) and st.session_state.user_page < total_pages:
                         st.session_state.user_page += 1
                         st.rerun()
-                
-                st.markdown("---")
-                start_idx = (st.session_state.user_page - 1) * items_per_page
+                else:
+                    st.write(f"총 {total_items}명")
+
+                current_page = st.session_state.user_page
+                start_idx = (current_page - 1) * items_per_page
                 end_idx = start_idx + items_per_page
                 page_df = target_df.iloc[start_idx:end_idx]
+                
+                page_df = page_df.rename(columns={'유저타입': '계정타입'})
+                display_columns = ['닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수']
 
-                # [헤더 출력]
-                col_widths = [2.5, 2, 1.5, 1.5, 2]
-                header_cols = st.columns(col_widths)
-                headers = ["닉네임", "ID(IP)", "계정", "활동", "글 / 댓"]
-                for col, text in zip(header_cols, headers):
-                    col.markdown(f"<div class='table-header'>{text}</div>", unsafe_allow_html=True)
+                # [핵심] on_select 적용 (체크박스 X, 행 전체 선택)
+                event = st.dataframe(
+                    page_df[display_columns],
+                    column_config={
+                        "총활동수": st.column_config.NumberColumn(format="%d회"),
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    on_select="rerun",
+                    selection_mode="single-row"
+                )
 
-                # [데이터 출력]
-                for idx, (index, row) in enumerate(page_df.iterrows()):
-                    cols = st.columns(col_widths)
-                    
-                    if cols[0].button(f"{row['닉네임']}", key=f"search_{idx}", use_container_width=True):
-                        show_user_detail_modal(row['닉네임'], row['ID(IP)'], row['유저타입'], df, selected_date)
-                    
-                    cols[1].markdown(f"<div class='table-cell'>{row['ID(IP)']}</div>", unsafe_allow_html=True)
-                    cols[2].markdown(f"<div class='table-cell'>{row['유저타입']}</div>", unsafe_allow_html=True)
-                    cols[3].markdown(f"<div class='table-cell'><b>{row['총활동수']}</b></div>", unsafe_allow_html=True)
-                    cols[4].markdown(f"<div class='table-cell' style='border-right: none;'>{row['작성글수']} / {row['작성댓글수']}</div>", unsafe_allow_html=True)
-                    
-                    st.markdown("<div style='border-bottom: 1px solid #e0e0e0; margin-bottom: 0px;'></div>", unsafe_allow_html=True)
+                # [이벤트 처리]
+                if len(event.selection.rows) > 0:
+                    selected_idx = event.selection.rows[0]
+                    # 주의: 페이징된 page_df에서 데이터를 가져와야 정확함
+                    row = page_df.iloc[selected_idx]
+                    show_user_detail_modal(row['닉네임'], row['ID(IP)'], row['계정타입'], df, selected_date)
 
 else:
     st.info("데이터 로딩 중... (데이터가 없거나 R2 연결을 확인해주세요)")

@@ -11,11 +11,15 @@ from botocore.config import Config
 # --- 페이지 기본 설정 ---
 st.set_page_config(page_title="ProjectMX Dashboard", layout="wide")
 
-# --- CSS 주입: UI 개선 ---
+# --- CSS 주입: UI 개선 및 '투명 버튼' 스타일링 ---
 st.markdown("""
     <style>
+        /* 기본 UI 정리 */
         [data-testid="stElementToolbar"] { display: none; }
+        header[data-testid="stHeader"] { visibility: hidden; }
+        footer { visibility: hidden; }
         
+        /* 라디오 버튼 스타일 */
         div[role="radiogroup"] label > div:first-child { display: none !important; }
         div[role="radiogroup"] label {
             background-color: #ffffff;
@@ -23,52 +27,78 @@ st.markdown("""
             border-radius: 8px !important;
             border: 1px solid #e0e0e0;
             margin-right: 10px;
-            transition: all 0.2s;
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            width: auto; 
-            min-width: 100px;
-        }
-        div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] > p {
-            text-align: center;
-            margin: 0;
-            width: 100%;
-            display: block;
-        }
-        div[role="radiogroup"] label:hover {
-            border-color: #333;
-            background-color: #f8f9fa;
         }
         div[role="radiogroup"] label:has(input:checked) {
-            background-color: #333333 !important;
-            border-color: #333333 !important;
+            background-color: #333 !important;
+            border-color: #333 !important;
             color: white !important;
         }
         div[role="radiogroup"] label:has(input:checked) p {
             color: white !important;
             font-weight: bold;
         }
-        div[data-testid="stSelectbox"] > div > div { min-height: 46px; }
-        
-        header[data-testid="stHeader"] { visibility: hidden; }
-        footer { visibility: hidden; }
 
-        /* [추가] 리스트 헤더 스타일 */
-        .list-header {
-            font-weight: bold;
-            border-bottom: 2px solid #e0e0e0;
-            padding-bottom: 5px;
-            margin-bottom: 10px;
-            color: #555;
+        /* ------------------------------------------------------- */
+        /* [핵심] 버튼을 '평범한 텍스트 링크'처럼 보이게 만드는 CSS */
+        /* ------------------------------------------------------- */
+        
+        /* 1. 데이터 테이블의 닉네임 버튼 타겟팅 */
+        div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] button {
+            background-color: transparent !important;
+            border: none !important;
+            padding: 0 !important;
+            color: #2E7D32 !important; /* 초록색 텍스트 */
+            text-align: left !important;
+            display: inline-block !important;
+            font-weight: 500 !important;
+            box-shadow: none !important;
+            margin-top: -3px !important; /* 텍스트 줄맞춤 보정 */
+            width: 100%;
+            justify-content: flex-start !important;
         }
-        /* [추가] 리스트 아이템 정렬 */
-        .list-item {
+
+        /* 2. 마우스 올렸을 때 효과 (밑줄) */
+        div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] button:hover {
+            color: #1B5E20 !important;
+            text-decoration: underline !important;
+            background-color: transparent !important;
+        }
+
+        /* 3. 클릭했을 때 효과 제거 (깜빡임 방지) */
+        div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] button:active,
+        div[data-testid="stVerticalBlock"] div[data-testid="stHorizontalBlock"] button:focus {
+            background-color: transparent !important;
+            color: #1B5E20 !important;
+            box-shadow: none !important;
+            outline: none !important;
+        }
+
+        /* ------------------------------------------------------- */
+        /* [테이블 디자인] st.columns로 만드는 표 스타일 */
+        /* ------------------------------------------------------- */
+        .table-header {
+            font-weight: bold;
+            color: #555;
+            border-bottom: 2px solid #ddd;
+            padding-bottom: 8px;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        .table-row {
+            border-bottom: 1px solid #f0f0f0;
+            padding-top: 8px;
+            padding-bottom: 8px;
+            font-size: 14px;
+            color: #333;
             display: flex;
             align-items: center;
-            height: 100%;
-            padding-top: 15px; /* 버튼 높이와 텍스트 줄맞춤 */
+        }
+        /* 일반 텍스트 셀 정렬 보정 */
+        .cell-text {
+            display: flex;
+            align-items: center;
+            height: 36px; /* 버튼 높이와 맞춤 */
         }
     </style>
 """, unsafe_allow_html=True)
@@ -259,48 +289,46 @@ if not df.empty:
             st.altair_chart(chart, use_container_width=True)
             st.caption(f"💡 그래프를 **좌우로 드래그**하면 다른 날짜의 데이터도 볼 수 있습니다.")
 
-        # --- [Tab 2] 유저 랭킹 (버튼 리스트 방식) ---
+        # --- [Tab 2] 유저 랭킹 (표 모양 버튼) ---
         elif selected_tab == "🏆 유저 랭킹":
             st.subheader("🔥 Top 20")
-            st.markdown("닉네임 버튼을 클릭하면 상세 정보를 볼 수 있습니다.")
-            st.markdown("---")
+            st.caption("닉네임을 클릭하면 상세 그래프가 나타납니다.")
 
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
 
-            # [헤더]
-            h1, h2, h3, h4, h5, h6 = st.columns([1, 2.5, 2, 1.5, 1.5, 1.5])
-            h1.markdown("<div class='list-header'>순위</div>", unsafe_allow_html=True)
-            h2.markdown("<div class='list-header'>닉네임 (클릭)</div>", unsafe_allow_html=True)
-            h3.markdown("<div class='list-header'>ID(IP)</div>", unsafe_allow_html=True)
-            h4.markdown("<div class='list-header'>계정</div>", unsafe_allow_html=True)
-            h5.markdown("<div class='list-header'>활동수</div>", unsafe_allow_html=True)
-            h6.markdown("<div class='list-header'>상세</div>", unsafe_allow_html=True)
+            # [표 헤더] - 표처럼 보이게 만듬
+            h_cols = st.columns([0.8, 3, 2, 1.5, 1.5, 2])
+            headers = ["순위", "닉네임", "ID(IP)", "계정", "활동", "글 / 댓"]
+            for col, text in zip(h_cols, headers):
+                col.markdown(f"<div class='table-header'>{text}</div>", unsafe_allow_html=True)
 
-            # [리스트 출력]
+            # [표 내용] - 루프를 돌며 버튼과 텍스트 배치
             for idx, (index, row) in enumerate(top_users.iterrows()):
-                c1, c2, c3, c4, c5, c6 = st.columns([1, 2.5, 2, 1.5, 1.5, 1.5])
+                cols = st.columns([0.8, 3, 2, 1.5, 1.5, 2])
                 
-                # 순위
-                c1.markdown(f"<div class='list-item'><b>{idx+1}</b></div>", unsafe_allow_html=True)
+                # 1. 순위
+                cols[0].markdown(f"<div class='cell-text'><b>{idx+1}</b></div>", unsafe_allow_html=True)
                 
-                # [핵심] 닉네임 버튼 (누르면 모달 실행)
-                if c2.button(f"{row['닉네임']}", key=f"rank_btn_{idx}", use_container_width=True):
+                # 2. 닉네임 (버튼이지만 CSS로 텍스트처럼 보이게 함)
+                # key를 유니크하게 설정하여 충돌 방지
+                if cols[1].button(f"{row['닉네임']}", key=f"rank_{idx}", use_container_width=True):
                     show_user_detail_modal(row['닉네임'], row['ID(IP)'], row['유저타입'], df, selected_date)
                 
-                # 정보들 (수직 정렬을 위해 div 감싸기)
-                c3.markdown(f"<div class='list-item'>{row['ID(IP)']}</div>", unsafe_allow_html=True)
-                c4.markdown(f"<div class='list-item'>{row['유저타입']}</div>", unsafe_allow_html=True)
-                c5.markdown(f"<div class='list-item'>{row['총활동수']}회</div>", unsafe_allow_html=True)
-                c6.markdown(f"<div class='list-item'>{row['작성글수']}글 / {row['작성댓글수']}댓</div>", unsafe_allow_html=True)
+                # 3. 나머지 정보 (수직 정렬을 위해 cell-text 클래스 사용)
+                cols[2].markdown(f"<div class='cell-text'>{row['ID(IP)']}</div>", unsafe_allow_html=True)
+                cols[3].markdown(f"<div class='cell-text'>{row['유저타입']}</div>", unsafe_allow_html=True)
+                cols[4].markdown(f"<div class='cell-text'><b>{row['총활동수']}</b></div>", unsafe_allow_html=True)
+                cols[5].markdown(f"<div class='cell-text'>{row['작성글수']} / {row['작성댓글수']}</div>", unsafe_allow_html=True)
                 
-                st.markdown("<hr style='margin: 5px 0; opacity: 0.3;'>", unsafe_allow_html=True)
+                # 구분선 (약하게)
+                st.markdown("<div style='border-bottom: 1px solid #f0f0f0; margin-bottom: 5px;'></div>", unsafe_allow_html=True)
 
 
-        # --- [Tab 3] 유저 검색 (버튼 리스트 방식) ---
+        # --- [Tab 3] 유저 검색 (표 모양 버튼) ---
         elif selected_tab == "👥 유저 검색":
             st.subheader("🔍 유저 검색")
-            st.markdown("닉네임 버튼을 클릭하면 상세 정보를 볼 수 있습니다.")
+            st.caption("닉네임을 클릭하면 상세 그래프가 나타납니다.")
 
             user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({'작성글수': 'sum', '작성댓글수': 'sum', '총활동수': 'sum'}).reset_index().sort_values(by='닉네임')
 
@@ -346,28 +374,27 @@ if not df.empty:
                 end_idx = start_idx + items_per_page
                 page_df = target_df.iloc[start_idx:end_idx]
 
-                # [헤더]
-                h1, h2, h3, h4, h5 = st.columns([2.5, 2, 1.5, 1.5, 2])
-                h1.markdown("<div class='list-header'>닉네임 (클릭)</div>", unsafe_allow_html=True)
-                h2.markdown("<div class='list-header'>ID(IP)</div>", unsafe_allow_html=True)
-                h3.markdown("<div class='list-header'>계정</div>", unsafe_allow_html=True)
-                h4.markdown("<div class='list-header'>활동수</div>", unsafe_allow_html=True)
-                h5.markdown("<div class='list-header'>상세</div>", unsafe_allow_html=True)
+                # [표 헤더]
+                h_cols = st.columns([3, 2, 1.5, 1.5, 2])
+                headers = ["닉네임", "ID(IP)", "계정", "활동", "글 / 댓"]
+                for col, text in zip(h_cols, headers):
+                    col.markdown(f"<div class='table-header'>{text}</div>", unsafe_allow_html=True)
 
-                # [리스트 출력]
+                # [표 내용]
                 for idx, (index, row) in enumerate(page_df.iterrows()):
-                    c1, c2, c3, c4, c5 = st.columns([2.5, 2, 1.5, 1.5, 2])
+                    cols = st.columns([3, 2, 1.5, 1.5, 2])
                     
-                    # [핵심] 닉네임 버튼
-                    if c1.button(f"{row['닉네임']}", key=f"search_btn_{idx}", use_container_width=True):
+                    # 1. 닉네임 (버튼)
+                    if cols[0].button(f"{row['닉네임']}", key=f"search_{idx}", use_container_width=True):
                         show_user_detail_modal(row['닉네임'], row['ID(IP)'], row['유저타입'], df, selected_date)
                     
-                    c2.markdown(f"<div class='list-item'>{row['ID(IP)']}</div>", unsafe_allow_html=True)
-                    c3.markdown(f"<div class='list-item'>{row['유저타입']}</div>", unsafe_allow_html=True)
-                    c4.markdown(f"<div class='list-item'>{row['총활동수']}회</div>", unsafe_allow_html=True)
-                    c5.markdown(f"<div class='list-item'>{row['작성글수']}글 / {row['작성댓글수']}댓</div>", unsafe_allow_html=True)
+                    # 2. 나머지 정보
+                    cols[1].markdown(f"<div class='cell-text'>{row['ID(IP)']}</div>", unsafe_allow_html=True)
+                    cols[2].markdown(f"<div class='cell-text'>{row['유저타입']}</div>", unsafe_allow_html=True)
+                    cols[3].markdown(f"<div class='cell-text'><b>{row['총활동수']}</b></div>", unsafe_allow_html=True)
+                    cols[4].markdown(f"<div class='cell-text'>{row['작성글수']} / {row['작성댓글수']}</div>", unsafe_allow_html=True)
                     
-                    st.markdown("<hr style='margin: 5px 0; opacity: 0.3;'>", unsafe_allow_html=True)
+                    st.markdown("<div style='border-bottom: 1px solid #f0f0f0; margin-bottom: 5px;'></div>", unsafe_allow_html=True)
 
 else:
     st.info("데이터 로딩 중... (데이터가 없거나 R2 연결을 확인해주세요)")

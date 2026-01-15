@@ -54,9 +54,6 @@ st.markdown("""
         
         header[data-testid="stHeader"] { visibility: hidden; }
         footer { visibility: hidden; }
-        
-        /* 테이블 헤더 정렬 */
-        th { text-align: center !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -124,8 +121,9 @@ def load_data_from_r2():
 # --- 유저 상세 정보 모달 ---
 @st.dialog("👤 유저 상세 활동 분석")
 def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
-    # 돋보기 아이콘 제거 후 표시
+    # 닉네임 앞의 "🔍 " 제거하고 검색
     clean_nick = nick.replace("🔍 ", "")
+    
     st.subheader(f"{clean_nick} ({user_type})")
     st.caption(f"ID(IP): {user_id} | 기준일: {target_date}")
 
@@ -165,7 +163,7 @@ def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
         ]
     ).properties(
         height=350,
-        title=f"'{clean_nick}'님의 시간대별 활동 추이"
+        title=f"{clean_nick}님의 시간대별 활동 추이"
     ).add_params(
         zoom_selection
     )
@@ -251,37 +249,33 @@ if not df.empty:
 
         # --- [Tab 2] 유저 랭킹 ---
         elif selected_tab == "🏆 유저 랭킹":
-            st.subheader("🔥 Top 20")
-            st.caption("👇 **목록의 닉네임이나 행을 클릭하면 상세 그래프를 볼 수 있습니다.**")
-            
+            st.subheader("🔥 Top 20 (클릭하여 상세 조회)")
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
             top_users = top_users.rename(columns={'유저타입': '계정타입'})
             
-            # [시각적 큐] 닉네임 앞에 돋보기 아이콘 추가
+            # [수정] 닉네임 앞에 돋보기 아이콘 추가 (시각적 유도)
             top_users['닉네임'] = "🔍 " + top_users['닉네임']
             
             event = st.dataframe(
                 top_users,
-                column_config={"총활동수": st.column_config.ProgressColumn(format="%d", min_value=0, max_value=int(top_users['총활동수'].max()) if not top_users.empty else 100)},
+                column_config={
+                    "총활동수": st.column_config.ProgressColumn(format="%d", min_value=0, max_value=int(top_users['총활동수'].max()) if not top_users.empty else 100),
+                },
                 hide_index=True, 
                 use_container_width=True,
-                # [필수] 행 선택 활성화 (스타일 적용 없음 = 기능 정상 작동)
                 on_select="rerun",
-                selection_mode="single-row" 
+                selection_mode="single-row"
             )
 
             if len(event.selection.rows) > 0:
                 selected_idx = event.selection.rows[0]
                 row_data = top_users.iloc[selected_idx]
-                # 모달 호출 시 '🔍 ' 제거하고 전달
                 show_user_detail_modal(row_data['닉네임'], row_data['ID(IP)'], row_data['계정타입'], df, selected_date)
 
         # --- [Tab 3] 유저 검색 ---
         elif selected_tab == "👥 유저 검색":
-            st.subheader("🔍 유저 검색")
-            st.caption("👇 **목록의 닉네임이나 행을 클릭하면 상세 그래프를 볼 수 있습니다.**")
-
+            st.subheader("🔍 유저 검색 (클릭하여 상세 조회)")
             user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({'작성글수': 'sum', '작성댓글수': 'sum', '총활동수': 'sum'}).reset_index().sort_values(by='닉네임')
 
             col_search_type, col_search_input = st.columns([1.2, 4])
@@ -324,9 +318,9 @@ if not df.empty:
                 end_idx = start_idx + items_per_page
                 page_df = target_df.iloc[start_idx:end_idx].rename(columns={'유저타입': '계정타입'})
                 
-                # [시각적 큐] 닉네임 앞에 돋보기 아이콘 추가
+                # [수정] 닉네임 앞에 돋보기 아이콘 추가
                 page_df['닉네임'] = "🔍 " + page_df['닉네임']
-                
+
                 event = st.dataframe(
                     page_df[['닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수']],
                     column_config={"총활동수": st.column_config.NumberColumn(format="%d회")},

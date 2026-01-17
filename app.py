@@ -256,7 +256,7 @@ if not df.empty:
             event = st.dataframe(
                 top_users,
                 column_config={
-                    "총활동수": st.column_config.NumberColumn(format="%d회"),
+                    "총활동수": st.column_config.NumberColumn(format="%d"),
                 },
                 hide_index=True,
                 use_container_width=True,
@@ -333,7 +333,7 @@ if not df.empty:
                 event = st.dataframe(
                     page_df[display_columns],
                     column_config={
-                        "총활동수": st.column_config.NumberColumn(format="%d회"),
+                        "총활동수": st.column_config.NumberColumn(format="%d"),
                     },
                     hide_index=True,
                     use_container_width=True,

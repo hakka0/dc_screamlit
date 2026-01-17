@@ -11,23 +11,13 @@ from botocore.config import Config
 # --- 페이지 기본 설정 ---
 st.set_page_config(page_title="ProjectMX Dashboard", layout="wide")
 
-# --- CSS 주입: UI 개선 (버튼 해킹 CSS 제거, 기본 스타일 유지) ---
+# --- CSS 주입 ---
 st.markdown("""
     <style>
-        /* 1. 상단 헤더 숨기기 */
-        header[data-testid="stHeader"] {
-            visibility: hidden;
-        }
-
-        /* 2. 하단 푸터 숨기기 */
-        footer {
-            visibility: hidden;
-        }
-
-        /* 3. 툴바 숨기기 */
         [data-testid="stElementToolbar"] { display: none; }
+        header[data-testid="stHeader"] { visibility: hidden; }
+        footer { visibility: hidden; }
         
-        /* 4. 라디오 버튼 스타일링 */
         div[role="radiogroup"] label > div:first-child { display: none !important; }
         div[role="radiogroup"] label {
             background-color: #ffffff;
@@ -35,27 +25,11 @@ st.markdown("""
             border-radius: 8px !important;
             border: 1px solid #e0e0e0;
             margin-right: 10px;
-            transition: all 0.2s;
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            width: auto; 
-            min-width: 100px;
-        }
-        div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] > p {
-            text-align: center;
-            margin: 0;
-            width: 100%;
-            display: block;
-        }
-        div[role="radiogroup"] label:hover {
-            border-color: #333;
-            background-color: #f8f9fa;
         }
         div[role="radiogroup"] label:has(input:checked) {
-            background-color: #333333 !important;
-            border-color: #333333 !important;
+            background-color: #333 !important;
+            border-color: #333 !important;
             color: white !important;
         }
         div[role="radiogroup"] label:has(input:checked) p {
@@ -71,7 +45,7 @@ st_header_col, st_space, st_date_col, st_time_col = st.columns([5, 1, 2, 3])
 with st_header_col:
     st.title("📊 블루 아카이브 갤러리 대시보드")
 
-# --- Cloudflare R2에서 데이터 가져오기 ---
+# --- Cloudflare R2 데이터 로드 ---
 @st.cache_data(ttl=300, show_spinner=False)
 def load_data_from_r2():
     try:
@@ -125,7 +99,6 @@ def load_data_from_r2():
     final_df['수집시간'] = pd.to_datetime(final_df['수집시간'])
 
     final_df['총활동수'] = final_df['작성글수'] + final_df['작성댓글수']
-    
     return final_df
 
 # --- 유저 상세 정보 모달 ---
@@ -151,13 +124,21 @@ def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
     zoom_end = zoom_start + pd.Timedelta(hours=23, minutes=59)
     zoom_selection = alt.selection_interval(bind='scales', encodings=['x'])
 
+    # [핵심 수정] Y축 최대값 계산 및 여백 설정 (모달용)
+    max_val = chart_data['카운트'].max()
+    if pd.isna(max_val) or max_val < 5: 
+        domain_max = 5 # 데이터가 적을 땐 최소 5칸 확보
+    else:
+        domain_max = max_val * 1.1 # 데이터가 많으면 위로 10% 여백
+
     chart = alt.Chart(chart_data).mark_line(point=True).encode(
         x=alt.X(
             '수집시간', 
             axis=alt.Axis(format='%H시', title='시간', tickCount=12),
             scale=alt.Scale(domain=[zoom_start, zoom_end])
         ),
-        y=alt.Y('카운트', title='활동 수', scale=alt.Scale(zero=True, domainMin=0)),
+        # [핵심 수정] scale=alt.Scale(domain=[0, domain_max]) 적용
+        y=alt.Y('카운트', title='활동 수', scale=alt.Scale(domain=[0, domain_max])),
         color=alt.Color(
             '활동유형', 
             legend=alt.Legend(title="활동"),
@@ -181,15 +162,8 @@ def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
     u_comments = user_daily_df['작성댓글수'].sum()
     st.info(f"📝 총 게시글: {u_posts}개 / 💬 총 댓글: {u_comments}개")
 
-# --- 데이터 처리 ---
-loading_messages = [
-    "☁️ 저 구름 너머엔 무엇이 있을까요?",
-    "🏃‍♂️ 데이터가 좀 많네요. 기다려 주세요.",
-    "🔍 놓친 데이터가 존재하는지 확인 중 입니다.",
-    "💾 이 더미 데이터는 뭘까요?",
-    "🤖 삐삐쀼쀼"
-]
-
+# --- 메인 실행 ---
+loading_messages = ["☁️ 데이터 로딩 중...", "🏃‍♂️ 열심히 가져오는 중...", "🔍 분석 중...", "💾 잠시만요...", "🤖 삐삐쀼쀼"]
 loading_text = random.choice(loading_messages)
 
 with st.spinner(loading_text):
@@ -227,7 +201,7 @@ if not df.empty:
     if filtered_df.empty:
         st.warning(f"⚠️ {selected_date} 해당 시간대에 데이터가 없습니다.")
     else:
-        # --- [Tab 1] 시간대별 그래프 ---
+        # --- [Tab 1] 데이터 상세 ---
         if selected_tab == "📈 데이터 상세":
             total_posts = filtered_df['작성글수'].sum()
             total_comments = filtered_df['작성댓글수'].sum()
@@ -244,15 +218,24 @@ if not df.empty:
             trend_stats = df.groupby('수집시간')[['작성글수', '작성댓글수']].sum().reset_index()
             trend_users = df.groupby(['수집시간', '닉네임', 'ID(IP)', '유저타입']).size().reset_index().groupby('수집시간').size().reset_index(name='액티브수')
             full_trend_df = pd.merge(trend_stats, trend_users, on='수집시간', how='left').fillna(0)
-
             chart_data = full_trend_df.melt('수집시간', var_name='활동유형', value_name='카운트')
+            
             zoom_start = pd.to_datetime(selected_date)
             zoom_end = zoom_start + pd.Timedelta(hours=23, minutes=59)
             zoom_selection = alt.selection_interval(bind='scales', encodings=['x'])
 
+            # [핵심 수정] Y축 최대값 계산 및 여백 설정 (메인 그래프용)
+            max_val = chart_data['카운트'].max()
+            # 데이터가 없거나 0일 경우 기본 5, 아니면 최대값의 1.1배(여백 10%)
+            if pd.isna(max_val) or max_val < 5: 
+                domain_max = 5 
+            else:
+                domain_max = max_val * 1.1
+
             chart = alt.Chart(chart_data).mark_line(point=True).encode(
                 x=alt.X('수집시간', axis=alt.Axis(format='%m월 %d일 %H시', title='시간', tickCount=10), scale=alt.Scale(domain=[zoom_start, zoom_end])),
-                y=alt.Y('카운트', title='활동 수', scale=alt.Scale(zero=True)),
+                # [핵심 수정] scale=alt.Scale(domain=[0, domain_max]) 적용
+                y=alt.Y('카운트', title='활동 수', scale=alt.Scale(domain=[0, domain_max])),
                 color=alt.Color('활동유형', legend=alt.Legend(title="지표"), scale=alt.Scale(domain=['액티브수', '작성글수', '작성댓글수'], range=['red', 'green', 'blue'])),
                 tooltip=[alt.Tooltip('수집시간', format='%Y-%m-%d %H:%M'), alt.Tooltip('활동유형'), alt.Tooltip('카운트')]
             ).properties(height=450).add_params(zoom_selection)
@@ -260,8 +243,7 @@ if not df.empty:
             st.altair_chart(chart, use_container_width=True)
             st.caption(f"💡 그래프를 **좌우로 드래그**하면 다른 날짜의 데이터도 볼 수 있습니다.")
 
-
-        # --- [Tab 2] 활동왕 랭킹 (행 선택 방식) ---
+        # --- [Tab 2] 유저 랭킹 ---
         elif selected_tab == "🏆 유저 랭킹":
             st.subheader("🔥 Top 20")
             st.caption("표의 행을 클릭하면 상세 그래프가 나타납니다.")
@@ -271,26 +253,24 @@ if not df.empty:
             
             top_users = top_users.rename(columns={'유저타입': '계정타입'})
             
-            # [핵심] on_select를 사용하여 행 선택 활성화
             event = st.dataframe(
                 top_users,
                 column_config={
-                    "총활동수": st.column_config.NumberColumn(format="%d"),
+                    "총활동수": st.column_config.NumberColumn(format="%d회"),
                 },
                 hide_index=True,
                 use_container_width=True,
-                on_select="rerun",          # 선택 시 리런
-                selection_mode="single-row" # 한 줄만 선택 가능
+                on_select="rerun",
+                selection_mode="single-row"
             )
 
-            # [이벤트 처리] 선택된 행이 있으면 모달 띄우기
             if len(event.selection.rows) > 0:
                 selected_index = event.selection.rows[0]
                 row = top_users.iloc[selected_index]
                 show_user_detail_modal(row['닉네임'], row['ID(IP)'], row['계정타입'], df, selected_date)
 
 
-        # --- [Tab 3] 전체 유저 일람 (행 선택 방식) ---
+        # --- [Tab 3] 전체 유저 일람 ---
         elif selected_tab == "👥 유저 검색":
             st.subheader("🔍 유저 검색 및 전체 목록")
             st.caption("표의 행을 클릭하면 상세 그래프가 나타납니다.")
@@ -350,11 +330,10 @@ if not df.empty:
                 page_df = page_df.rename(columns={'유저타입': '계정타입'})
                 display_columns = ['닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수']
 
-                # [핵심] on_select 적용 (체크박스 X, 행 전체 선택)
                 event = st.dataframe(
                     page_df[display_columns],
                     column_config={
-                        "총활동수": st.column_config.NumberColumn(format="%d"),
+                        "총활동수": st.column_config.NumberColumn(format="%d회"),
                     },
                     hide_index=True,
                     use_container_width=True,
@@ -362,10 +341,8 @@ if not df.empty:
                     selection_mode="single-row"
                 )
 
-                # [이벤트 처리]
                 if len(event.selection.rows) > 0:
                     selected_idx = event.selection.rows[0]
-                    # 주의: 페이징된 page_df에서 데이터를 가져와야 정확함
                     row = page_df.iloc[selected_idx]
                     show_user_detail_modal(row['닉네임'], row['ID(IP)'], row['계정타입'], df, selected_date)
 

@@ -122,14 +122,10 @@ def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
     
     zoom_start = pd.to_datetime(target_date)
     zoom_end = zoom_start + pd.Timedelta(hours=23, minutes=59)
-    zoom_selection = alt.selection_interval(bind='scales', encodings=['x'])
-
-    # [핵심 수정] Y축 최대값 계산 및 여백 설정 (모달용)
-    max_val = chart_data['카운트'].max()
-    if pd.isna(max_val) or max_val < 5: 
-        domain_max = 5 # 데이터가 적을 땐 최소 5칸 확보
-    else:
-        domain_max = max_val * 1.1 # 데이터가 많으면 위로 10% 여백
+    
+    # [핵심 수정 1] Y축 제한 해제 및 자유로운 줌/팬 활성화
+    # encodings=['x']를 제거하여 X, Y축 모두 조작 가능하게 변경
+    zoom_selection = alt.selection_interval(bind='scales')
 
     chart = alt.Chart(chart_data).mark_line(point=True).encode(
         x=alt.X(
@@ -137,8 +133,8 @@ def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
             axis=alt.Axis(format='%H시', title='시간', tickCount=12),
             scale=alt.Scale(domain=[zoom_start, zoom_end])
         ),
-        # [핵심 수정] scale=alt.Scale(domain=[0, domain_max]) 적용
-        y=alt.Y('카운트', title='활동 수', scale=alt.Scale(domain=[0, domain_max])),
+        # [핵심 수정 2] domain 고정 제거 (zero=True만 유지하여 0부터 시작하되 위는 자유롭게)
+        y=alt.Y('카운트', title='활동 수', scale=alt.Scale(zero=True)),
         color=alt.Color(
             '활동유형', 
             legend=alt.Legend(title="활동"),
@@ -222,26 +218,21 @@ if not df.empty:
             
             zoom_start = pd.to_datetime(selected_date)
             zoom_end = zoom_start + pd.Timedelta(hours=23, minutes=59)
-            zoom_selection = alt.selection_interval(bind='scales', encodings=['x'])
 
-            # [핵심 수정] Y축 최대값 계산 및 여백 설정 (메인 그래프용)
-            max_val = chart_data['카운트'].max()
-            # 데이터가 없거나 0일 경우 기본 5, 아니면 최대값의 1.1배(여백 10%)
-            if pd.isna(max_val) or max_val < 5: 
-                domain_max = 5 
-            else:
-                domain_max = max_val * 1.1
+            # [핵심 수정 1] 메인 그래프 인터랙션 변경
+            # encodings=['x'] 제거 -> X축, Y축 모두 줌/드래그 가능
+            zoom_selection = alt.selection_interval(bind='scales')
 
             chart = alt.Chart(chart_data).mark_line(point=True).encode(
                 x=alt.X('수집시간', axis=alt.Axis(format='%m월 %d일 %H시', title='시간', tickCount=10), scale=alt.Scale(domain=[zoom_start, zoom_end])),
-                # [핵심 수정] scale=alt.Scale(domain=[0, domain_max]) 적용
-                y=alt.Y('카운트', title='활동 수', scale=alt.Scale(domain=[0, domain_max])),
+                # [핵심 수정 2] Y축 강제 도메인 삭제. zero=True로 0부터 시작하지만 상한선은 자동/수동조절
+                y=alt.Y('카운트', title='활동 수', scale=alt.Scale(zero=True)),
                 color=alt.Color('활동유형', legend=alt.Legend(title="지표"), scale=alt.Scale(domain=['액티브수', '작성글수', '작성댓글수'], range=['red', 'green', 'blue'])),
                 tooltip=[alt.Tooltip('수집시간', format='%Y-%m-%d %H:%M'), alt.Tooltip('활동유형'), alt.Tooltip('카운트')]
             ).properties(height=450).add_params(zoom_selection)
 
             st.altair_chart(chart, use_container_width=True)
-            st.caption(f"💡 그래프를 **좌우로 드래그**하면 다른 날짜의 데이터도 볼 수 있습니다.")
+            st.caption(f"💡 **마우스 휠**로 확대/축소하거나 **드래그**하여 그래프를 자유롭게 움직일 수 있습니다.")
 
         # --- [Tab 2] 유저 랭킹 ---
         elif selected_tab == "🏆 유저 랭킹":
@@ -256,7 +247,7 @@ if not df.empty:
             event = st.dataframe(
                 top_users,
                 column_config={
-                    "총활동수": st.column_config.NumberColumn(format="%d"),
+                    "총활동수": st.column_config.NumberColumn(format="%d회"),
                 },
                 hide_index=True,
                 use_container_width=True,
@@ -333,7 +324,7 @@ if not df.empty:
                 event = st.dataframe(
                     page_df[display_columns],
                     column_config={
-                        "총활동수": st.column_config.NumberColumn(format="%d"),
+                        "총활동수": st.column_config.NumberColumn(format="%d회"),
                     },
                     hide_index=True,
                     use_container_width=True,

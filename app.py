@@ -122,10 +122,17 @@ def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
     
     zoom_start = pd.to_datetime(target_date)
     zoom_end = zoom_start + pd.Timedelta(hours=23, minutes=59)
-    
-    # [핵심 수정 1] Y축 제한 해제 및 자유로운 줌/팬 활성화
-    # encodings=['x']를 제거하여 X, Y축 모두 조작 가능하게 변경
     zoom_selection = alt.selection_interval(bind='scales')
+
+    # [모달 그래프 Y축 설정]
+    # 1. 해당 유저의 현재 날짜 데이터만 필터링하여 최대값 계산
+    current_view_data = chart_data[chart_data['수집시간'].dt.date == target_date]
+    if not current_view_data.empty:
+        current_max = current_view_data['카운트'].max()
+        # 최대값이 너무 작으면 최소 5로 설정, 아니면 10% 여백
+        y_max = 5 if pd.isna(current_max) or current_max < 5 else current_max * 1.1
+    else:
+        y_max = 5
 
     chart = alt.Chart(chart_data).mark_line(point=True).encode(
         x=alt.X(
@@ -133,8 +140,8 @@ def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
             axis=alt.Axis(format='%H시', title='시간', tickCount=12),
             scale=alt.Scale(domain=[zoom_start, zoom_end])
         ),
-        # [핵심 수정 2] domain 고정 제거 (zero=True만 유지하여 0부터 시작하되 위는 자유롭게)
-        y=alt.Y('카운트', title='활동 수', scale=alt.Scale(zero=True)),
+        # [핵심] domainMin=0으로 0 이하 방지, domain=[0, y_max]로 초기 화면 스케일 최적화
+        y=alt.Y('카운트', title='활동 수', scale=alt.Scale(domain=[0, y_max], domainMin=0)),
         color=alt.Color(
             '활동유형', 
             legend=alt.Legend(title="활동"),
@@ -218,15 +225,24 @@ if not df.empty:
             
             zoom_start = pd.to_datetime(selected_date)
             zoom_end = zoom_start + pd.Timedelta(hours=23, minutes=59)
-
-            # [핵심 수정 1] 메인 그래프 인터랙션 변경
-            # encodings=['x'] 제거 -> X축, Y축 모두 줌/드래그 가능
             zoom_selection = alt.selection_interval(bind='scales')
+
+            # [핵심 수정: 메인 그래프 Y축 설정]
+            # 1. 전체 데이터(chart_data) 중 '선택된 날짜'의 데이터만 추출
+            daily_view_data = chart_data[chart_data['수집시간'].dt.date == selected_date]
+            
+            # 2. 해당 날짜의 최대값(Max) 계산
+            if not daily_view_data.empty:
+                current_max = daily_view_data['카운트'].max()
+                # 3. Y축 상한선 설정 (최대값의 110% 지점, 최소 10)
+                y_domain_max = 10 if pd.isna(current_max) or current_max < 10 else current_max * 1.1
+            else:
+                y_domain_max = 10
 
             chart = alt.Chart(chart_data).mark_line(point=True).encode(
                 x=alt.X('수집시간', axis=alt.Axis(format='%m월 %d일 %H시', title='시간', tickCount=10), scale=alt.Scale(domain=[zoom_start, zoom_end])),
-                # [핵심 수정 2] Y축 강제 도메인 삭제. zero=True로 0부터 시작하지만 상한선은 자동/수동조절
-                y=alt.Y('카운트', title='활동 수', scale=alt.Scale(zero=True)),
+                # [핵심] domain=[0, y_domain_max]로 초기 뷰 고정 + domainMin=0으로 하한선 힌트 제공
+                y=alt.Y('카운트', title='활동 수', scale=alt.Scale(domain=[0, y_domain_max], domainMin=0)),
                 color=alt.Color('활동유형', legend=alt.Legend(title="지표"), scale=alt.Scale(domain=['액티브수', '작성글수', '작성댓글수'], range=['red', 'green', 'blue'])),
                 tooltip=[alt.Tooltip('수집시간', format='%Y-%m-%d %H:%M'), alt.Tooltip('활동유형'), alt.Tooltip('카운트')]
             ).properties(height=450).add_params(zoom_selection)

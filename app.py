@@ -101,6 +101,77 @@ def load_data_from_r2():
     final_df['총활동수'] = final_df['작성글수'] + final_df['작성댓글수']
     return final_df
 
+# --- [공통 함수] 고급 인터랙티브 차트 생성 (Overview + Detail 패턴) ---
+def create_interactive_chart(chart_data, title_prefix=""):
+    # 1. 브러쉬(미니맵 드래그) 설정
+    brush = alt.selection_interval(encodings=['x'])
+
+    # 2. 마우스 호버(세로줄) 설정 - X축 기준 가장 가까운 데이터 선택
+    nearest = alt.selection_point(nearest=True, on='mouseover', fields=['수집시간'], empty=False)
+
+    # 기본 차트 정의
+    base = alt.Chart(chart_data).encode(
+        x=alt.X('수집시간', axis=alt.Axis(title='시간', format='%H시')),
+        color=alt.Color('활동유형', legend=alt.Legend(title="지표"), scale=alt.Scale(domain=['액티브수', '작성글수', '작성댓글수'], range=['red', 'green', 'blue']))
+    )
+
+    # --- [상단] 메인 상세 그래프 ---
+    # 데이터 라인
+    lines = base.mark_line(point=True).encode(
+        # X축은 브러쉬(미니맵)와 연동
+        x=alt.X('수집시간', scale=alt.Scale(domain=brush)),
+        # Y축은 domainMin=0으로 고정하되, 상한선은 데이터에 맞춰 자동 조절 (Auto Scaling)
+        y=alt.Y('카운트', title='활동 수', scale=alt.Scale(domainMin=0, nice=True))
+    )
+
+    # 투명한 점 (마우스 호버 감지용)
+    selectors = base.mark_point().encode(
+        x=alt.X('수집시간', scale=alt.Scale(domain=brush)),
+        y=alt.Y('카운트', scale=alt.Scale(domainMin=0, nice=True)),
+        opacity=alt.value(0)
+    ).add_params(
+        nearest
+    )
+
+    # 세로줄 (Rule)
+    rules = base.mark_rule(color='gray').encode(
+        x=alt.X('수집시간', scale=alt.Scale(domain=brush)),
+        opacity=alt.condition(nearest, alt.value(0.5), alt.value(0)),
+        tooltip=[
+            alt.Tooltip('수집시간', format='%Y-%m-%d %H:%M'),
+            alt.Tooltip('활동유형'),
+            alt.Tooltip('카운트', format=',')
+        ]
+    )
+
+    # 텍스트 포인트 (데이터 강조)
+    points = base.mark_circle().encode(
+        x=alt.X('수집시간', scale=alt.Scale(domain=brush)),
+        y=alt.Y('카운트', scale=alt.Scale(domainMin=0, nice=True)),
+        opacity=alt.condition(nearest, alt.value(1), alt.value(0))
+    )
+
+    # 상단 차트 조합
+    upper_chart = (lines + selectors + rules + points).properties(
+        height=350,
+        title=f"{title_prefix} 상세 활동 (하단 그래프를 드래그하여 확대)"
+    )
+
+    # --- [하단] 미니맵 (Navigator) ---
+    lower_chart = base.mark_area().encode(
+        x=alt.X('수집시간', axis=alt.Axis(format='%H시', title='구간 선택 (드래그)')),
+        y=alt.Y('카운트', axis=None, title=None), # Y축 숨김
+        opacity=alt.value(0.3) # 연하게 표시
+    ).add_params(
+        brush
+    ).properties(
+        height=60 # 얇은 높이
+    )
+
+    # 상단 + 하단 결합
+    return (upper_chart & lower_chart)
+
+
 # --- 유저 상세 정보 모달 ---
 @st.dialog("👤 유저 상세 활동 분석")
 def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
@@ -120,45 +191,8 @@ def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
     user_trend = user_daily_df.groupby('수집시간')[['작성글수', '작성댓글수']].sum().reset_index()
     chart_data = user_trend.melt('수집시간', var_name='활동유형', value_name='카운트')
     
-    zoom_start = pd.to_datetime(target_date)
-    zoom_end = zoom_start + pd.Timedelta(hours=23, minutes=59)
-    zoom_selection = alt.selection_interval(bind='scales')
-
-    # [모달 그래프 Y축 설정]
-    # 1. 해당 유저의 현재 날짜 데이터만 필터링하여 최대값 계산
-    current_view_data = chart_data[chart_data['수집시간'].dt.date == target_date]
-    if not current_view_data.empty:
-        current_max = current_view_data['카운트'].max()
-        # 최대값이 너무 작으면 최소 5로 설정, 아니면 10% 여백
-        y_max = 5 if pd.isna(current_max) or current_max < 5 else current_max * 1.1
-    else:
-        y_max = 5
-
-    chart = alt.Chart(chart_data).mark_line(point=True).encode(
-        x=alt.X(
-            '수집시간', 
-            axis=alt.Axis(format='%H시', title='시간', tickCount=12),
-            scale=alt.Scale(domain=[zoom_start, zoom_end])
-        ),
-        # [핵심] domainMin=0으로 0 이하 방지, domain=[0, y_max]로 초기 화면 스케일 최적화
-        y=alt.Y('카운트', title='활동 수', scale=alt.Scale(domain=[0, y_max], domainMin=0)),
-        color=alt.Color(
-            '활동유형', 
-            legend=alt.Legend(title="활동"),
-            scale=alt.Scale(domain=['작성글수', '작성댓글수'], range=['green', 'blue'])
-        ),
-        tooltip=[
-            alt.Tooltip('수집시간', format='%H시 %M분'),
-            alt.Tooltip('활동유형'),
-            alt.Tooltip('카운트')
-        ]
-    ).properties(
-        height=350,
-        title=f"{nick}님의 시간대별 활동 추이"
-    ).add_params(
-        zoom_selection
-    )
-
+    # 공통 차트 함수 사용
+    chart = create_interactive_chart(chart_data, title_prefix=f"{nick}님의")
     st.altair_chart(chart, use_container_width=True)
     
     u_posts = user_daily_df['작성글수'].sum()
@@ -223,32 +257,11 @@ if not df.empty:
             full_trend_df = pd.merge(trend_stats, trend_users, on='수집시간', how='left').fillna(0)
             chart_data = full_trend_df.melt('수집시간', var_name='활동유형', value_name='카운트')
             
-            zoom_start = pd.to_datetime(selected_date)
-            zoom_end = zoom_start + pd.Timedelta(hours=23, minutes=59)
-            zoom_selection = alt.selection_interval(bind='scales')
-
-            # [핵심 수정: 메인 그래프 Y축 설정]
-            # 1. 전체 데이터(chart_data) 중 '선택된 날짜'의 데이터만 추출
-            daily_view_data = chart_data[chart_data['수집시간'].dt.date == selected_date]
-            
-            # 2. 해당 날짜의 최대값(Max) 계산
-            if not daily_view_data.empty:
-                current_max = daily_view_data['카운트'].max()
-                # 3. Y축 상한선 설정 (최대값의 110% 지점, 최소 10)
-                y_domain_max = 10 if pd.isna(current_max) or current_max < 10 else current_max * 1.1
-            else:
-                y_domain_max = 10
-
-            chart = alt.Chart(chart_data).mark_line(point=True).encode(
-                x=alt.X('수집시간', axis=alt.Axis(format='%m월 %d일 %H시', title='시간', tickCount=10), scale=alt.Scale(domain=[zoom_start, zoom_end])),
-                # [핵심] domain=[0, y_domain_max]로 초기 뷰 고정 + domainMin=0으로 하한선 힌트 제공
-                y=alt.Y('카운트', title='활동 수', scale=alt.Scale(domain=[0, y_domain_max], domainMin=0)),
-                color=alt.Color('활동유형', legend=alt.Legend(title="지표"), scale=alt.Scale(domain=['액티브수', '작성글수', '작성댓글수'], range=['red', 'green', 'blue'])),
-                tooltip=[alt.Tooltip('수집시간', format='%Y-%m-%d %H:%M'), alt.Tooltip('활동유형'), alt.Tooltip('카운트')]
-            ).properties(height=450).add_params(zoom_selection)
-
+            # 공통 차트 함수 사용 (메인 그래프)
+            chart = create_interactive_chart(chart_data)
             st.altair_chart(chart, use_container_width=True)
-            st.caption(f"💡 **마우스 휠**로 확대/축소하거나 **드래그**하여 그래프를 자유롭게 움직일 수 있습니다.")
+            
+            st.caption(f"💡 **하단의 작은 그래프**를 드래그하여 보고 싶은 구간을 선택하세요.")
 
         # --- [Tab 2] 유저 랭킹 ---
         elif selected_tab == "🏆 유저 랭킹":

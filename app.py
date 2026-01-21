@@ -102,7 +102,12 @@ def load_data_from_r2():
     return final_df
 
 # --- [공통 함수] 고급 인터랙티브 차트 생성 (Overview + Detail 패턴) ---
-def create_interactive_chart(chart_data, title_prefix=""):
+def create_interactive_chart(chart_data, target_date, title_prefix=""):
+    # [설정 1] 날짜 범위 강제 고정 (00:00 ~ 23:59)
+    # 이렇게 해야 데이터가 없는 시간대도 차트에서 잘리지 않고 0~24시 전체가 보입니다.
+    start_time = pd.Timestamp(target_date).replace(hour=0, minute=0, second=0)
+    end_time = pd.Timestamp(target_date).replace(hour=23, minute=59, second=59)
+
     # 1. 브러쉬(미니맵 드래그) 설정
     brush = alt.selection_interval(encodings=['x'])
 
@@ -111,7 +116,8 @@ def create_interactive_chart(chart_data, title_prefix=""):
 
     # 기본 차트 정의
     base = alt.Chart(chart_data).encode(
-        x=alt.X('수집시간', axis=alt.Axis(title='시간', format='%H시')),
+        # X축 도메인을 하루 전체로 고정
+        x=alt.X('수집시간', axis=alt.Axis(title='시간', format='%H시'), scale=alt.Scale(domain=[start_time, end_time])),
         color=alt.Color('활동유형', legend=alt.Legend(title="지표"), scale=alt.Scale(domain=['액티브수', '작성글수', '작성댓글수'], range=['red', 'green', 'blue']))
     )
 
@@ -137,10 +143,10 @@ def create_interactive_chart(chart_data, title_prefix=""):
     rules = base.mark_rule(color='gray').encode(
         x=alt.X('수집시간', scale=alt.Scale(domain=brush)),
         opacity=alt.condition(nearest, alt.value(0.5), alt.value(0)),
+        # [설정 3] 툴팁에서 '활동유형' 제거
         tooltip=[
-            alt.Tooltip('수집시간', format='%Y-%m-%d %H:%M'),
-            alt.Tooltip('활동유형'),
-            alt.Tooltip('카운트', format=',')
+            alt.Tooltip('수집시간', format='%H시 %M분'),
+            alt.Tooltip('카운트', format=',d')
         ]
     )
 
@@ -154,18 +160,18 @@ def create_interactive_chart(chart_data, title_prefix=""):
     # 상단 차트 조합
     upper_chart = (lines + selectors + rules + points).properties(
         height=350,
-        title=f"{title_prefix} 상세 활동 (하단 그래프를 드래그하여 확대)"
+        title=f"{title_prefix} 상세 활동 (하단을 드래그하여 확대)"
     )
 
     # --- [하단] 미니맵 (Navigator) ---
     lower_chart = base.mark_area().encode(
-        x=alt.X('수집시간', axis=alt.Axis(format='%H시', title='구간 선택 (드래그)')),
+        x=alt.X('수집시간', axis=alt.Axis(format='%H시', title='구간 선택 (드래그)'), scale=alt.Scale(domain=[start_time, end_time])),
         y=alt.Y('카운트', axis=None, title=None), # Y축 숨김
         opacity=alt.value(0.3) # 연하게 표시
     ).add_params(
         brush
     ).properties(
-        height=60 # 얇은 높이
+        height=80 # [설정 2] 미니맵 높이를 키워 모바일 터치/드래그 용이하게 변경
     )
 
     # 상단 + 하단 결합
@@ -192,7 +198,7 @@ def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
     chart_data = user_trend.melt('수집시간', var_name='활동유형', value_name='카운트')
     
     # 공통 차트 함수 사용
-    chart = create_interactive_chart(chart_data, title_prefix=f"{nick}님의")
+    chart = create_interactive_chart(chart_data, target_date, title_prefix=f"{nick}님의")
     st.altair_chart(chart, use_container_width=True)
     
     u_posts = user_daily_df['작성글수'].sum()
@@ -258,7 +264,7 @@ if not df.empty:
             chart_data = full_trend_df.melt('수집시간', var_name='활동유형', value_name='카운트')
             
             # 공통 차트 함수 사용 (메인 그래프)
-            chart = create_interactive_chart(chart_data)
+            chart = create_interactive_chart(chart_data, selected_date)
             st.altair_chart(chart, use_container_width=True)
             
             st.caption(f"💡 **하단의 작은 그래프**를 드래그하여 보고 싶은 구간을 선택하세요.")

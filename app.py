@@ -101,77 +101,39 @@ def load_data_from_r2():
     final_df['총활동수'] = final_df['작성글수'] + final_df['작성댓글수']
     return final_df
 
-# --- [그래프 생성 함수] Overview(미니맵) + Detail(메인) ---
-def create_chart(chart_data, target_date, title_prefix=""):
-    # 날짜 범위 고정 (00:00 ~ 23:59) - 차트가 잘리지 않도록 함
-    start_time = pd.Timestamp(target_date).replace(hour=0, minute=0, second=0)
-    end_time = pd.Timestamp(target_date).replace(hour=23, minute=59, second=59)
+# --- [Step 1] 모바일 드래그 해결을 위한 차트 생성 함수 ---
+def create_brush_chart(chart_data):
+    # 기본 베이스 차트
+    base = alt.Chart(chart_data).encode(
+        x=alt.X('수집시간', axis=alt.Axis(title='시간', format='%H시')),
+        color=alt.Color('활동유형', legend=alt.Legend(title="지표"), 
+                        scale=alt.Scale(domain=['액티브수', '작성글수', '작성댓글수'], range=['red', 'green', 'blue']))
+    )
 
-    # 1. 브러쉬(X축 드래그) 설정
+    # 1. 구간 선택용 브러쉬 (X축 방향으로만 드래그 가능)
     brush = alt.selection_interval(encodings=['x'])
 
-    # 2. 마우스 호버(세로줄) 설정
-    nearest = alt.selection_point(nearest=True, on='mouseover', fields=['수집시간'], empty=False)
-
-    # 기본 차트 설정
-    base = alt.Chart(chart_data).encode(
-        x=alt.X('수집시간', axis=alt.Axis(title='시간', format='%H시'), scale=alt.Scale(domain=[start_time, end_time])),
-        color=alt.Color('활동유형', legend=alt.Legend(title="지표"), scale=alt.Scale(domain=['액티브수', '작성글수', '작성댓글수'], range=['red', 'green', 'blue']))
-    )
-
-    # --- [상단] 메인 상세 그래프 ---
-    lines = base.mark_line(point=True).encode(
-        # X축: 브러쉬(미니맵)와 연동
-        x=alt.X('수집시간', scale=alt.Scale(domain=brush)),
-        # Y축: domainMin=0으로 음수 방지, nice=True로 자동 스케일링(가시성 확보)
-        y=alt.Y('카운트', title='활동 수', scale=alt.Scale(domainMin=0, nice=True))
-    )
-
-    # 툴팁용 투명 포인트
-    selectors = base.mark_point().encode(
-        x=alt.X('수집시간', scale=alt.Scale(domain=brush)),
-        y=alt.Y('카운트', scale=alt.Scale(domainMin=0, nice=True)),
-        opacity=alt.value(0)
-    ).add_params(
-        nearest
-    )
-
-    # 세로줄
-    rules = base.mark_rule(color='gray').encode(
-        x=alt.X('수집시간', scale=alt.Scale(domain=brush)),
-        opacity=alt.condition(nearest, alt.value(0.5), alt.value(0)),
-        # [요청사항 반영] 툴팁에서 '활동유형' 제거
-        tooltip=[
-            alt.Tooltip('수집시간', format='%H시 %M분'),
-            alt.Tooltip('카운트', format=',d')
-        ]
-    )
-
-    # 데이터 포인트 강조
-    points = base.mark_circle().encode(
-        x=alt.X('수집시간', scale=alt.Scale(domain=brush)),
-        y=alt.Y('카운트', scale=alt.Scale(domainMin=0, nice=True)),
-        opacity=alt.condition(nearest, alt.value(1), alt.value(0))
-    )
-
-    upper_chart = (lines + selectors + rules + points).properties(
+    # 2. 상단 메인 차트 (터치해도 안 움직임, 브러쉬에 의해서만 움직임)
+    upper = base.mark_line(point=True).encode(
+        x=alt.X('수집시간', scale=alt.Scale(domain=brush), axis=alt.Axis(title='시간')),
+        y=alt.Y('카운트', title='활동 수'),
+        tooltip=['수집시간', '활동유형', '카운트']
+    ).properties(
         height=350,
-        title=f"{title_prefix} 상세 활동 (하단을 드래그하여 구간 확대)"
+        title="상세 활동 (하단 그래프를 드래그하여 구간 선택)"
     )
 
-    # --- [하단] 미니맵 (Navigator/Zipper) ---
-    lower_chart = base.mark_area().encode(
-        x=alt.X('수집시간', axis=alt.Axis(format='%H시', title='구간 선택'), scale=alt.Scale(domain=[start_time, end_time])),
-        y=alt.Y('카운트', axis=None, title=None),
+    # 3. 하단 네비게이터 차트 (여기서 드래그)
+    lower = base.mark_area().encode(
+        y=alt.Y('카운트', axis=None), # Y축 숨김
         opacity=alt.value(0.3)
     ).add_params(
         brush
     ).properties(
-        height=70 # 드래그하기 편하게 높이 설정
+        height=60 # 조작하기 편하게 높이 설정
     )
 
-    return (upper_chart & lower_chart)
-
+    return upper & lower
 
 # --- 유저 상세 정보 모달 ---
 @st.dialog("👤 유저 상세 활동 분석")
@@ -192,10 +154,8 @@ def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
     user_trend = user_daily_df.groupby('수집시간')[['작성글수', '작성댓글수']].sum().reset_index()
     chart_data = user_trend.melt('수집시간', var_name='활동유형', value_name='카운트')
     
-    # 공통 차트 함수 호출
-    chart = create_chart(chart_data, target_date, title_prefix=f"{nick}님의")
-    
-    # [핵심 수정] key를 추가하여 날짜 변경 시 그래프 초기화 (오류 방지)
+    # [Step 1] 수정된 차트 함수 적용 + Key 추가 (그래프 사라짐 방지)
+    chart = create_brush_chart(chart_data)
     st.altair_chart(chart, use_container_width=True, key=f"modal_{user_id}_{target_date}")
     
     u_posts = user_daily_df['작성글수'].sum()
@@ -260,10 +220,8 @@ if not df.empty:
             full_trend_df = pd.merge(trend_stats, trend_users, on='수집시간', how='left').fillna(0)
             chart_data = full_trend_df.melt('수집시간', var_name='활동유형', value_name='카운트')
             
-            # 공통 차트 함수 호출
-            chart = create_chart(chart_data, selected_date)
-            
-            # [핵심 수정] key에 selected_date를 포함하여 날짜 변경 시 그래프 강제 새로고침
+            # [Step 1] 수정된 차트 함수 적용 + Key 추가 (그래프 사라짐 방지)
+            chart = create_brush_chart(chart_data)
             st.altair_chart(chart, use_container_width=True, key=f"main_chart_{selected_date}")
             
             st.caption(f"💡 **하단의 작은 그래프**를 드래그하여 보고 싶은 구간을 선택하세요.")
@@ -293,6 +251,7 @@ if not df.empty:
                 selected_index = event.selection.rows[0]
                 row = top_users.iloc[selected_index]
                 show_user_detail_modal(row['닉네임'], row['ID(IP)'], row['계정타입'], df, selected_date)
+
 
         # --- [Tab 3] 전체 유저 일람 ---
         elif selected_tab == "👥 유저 검색":

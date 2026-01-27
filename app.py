@@ -1,33 +1,3 @@
-정확히 보셨습니다. 이전에 `scrapePostsAndComments` 함수가 에러를 반환하도록 로직을 수정했는데, 정작 **함수 정의(선언부)에서 반환 타입을 명시하지 않아서 발생한 오류**입니다.
-
-함수가 `error`를 내뱉으려는데(`return fmt.Errorf...`), 껍데기(`func ...`)는 "나는 아무것도 반환 안 해!"라고 되어 있으니 컴파일러가 화를 내는 것입니다.
-
-### 🛠️ 해결 방법
-
-`scrapePostsAndComments` 함수의 **첫 줄**을 아래와 같이 수정해야 합니다. 끝에 **`error`** 단어 하나만 추가하면 됩니다.
-
-* **수정 전 (오류 발생):**
-```go
-func scrapePostsAndComments(startNo int, endNo int, collectionTimeStr string, targetStart, targetEnd time.Time) {
-
-```
-
-
-* **수정 후 (정상 작동):**
-```go
-func scrapePostsAndComments(startNo int, endNo int, collectionTimeStr string, targetStart, targetEnd time.Time) error {
-
-```
-
-
-
----
-
-### 📄 바로 복사해서 덮어쓸 전체 코드 (수정 완료)
-
-해당 부분(`error` 추가)을 포함하여 컴파일 오류가 없도록 완벽히 수정한 전체 코드를 드립니다. 이대로 `dc_crawling.go` 파일 전체를 덮어쓰시면 됩니다.
-
-```go
 package main
 
 import (
@@ -618,5 +588,3 @@ func main() {
 
 	fmt.Println("모든 작업 완료.")
 }
-
-```

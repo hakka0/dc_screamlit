@@ -103,15 +103,14 @@ def load_data_from_r2():
 
 # --- [공통 함수] 고급 인터랙티브 차트 생성 (Overview + Detail 패턴) ---
 def create_interactive_chart(chart_data, target_date, title_prefix=""):
-    # [설정 1] 날짜 범위 강제 고정 (00:00 ~ 23:59)
-    # 이렇게 해야 데이터가 없는 시간대도 차트에서 잘리지 않고 0~24시 전체가 보입니다.
+    # 날짜 범위 강제 고정 (00:00 ~ 23:59)
     start_time = pd.Timestamp(target_date).replace(hour=0, minute=0, second=0)
     end_time = pd.Timestamp(target_date).replace(hour=23, minute=59, second=59)
 
     # 1. 브러쉬(미니맵 드래그) 설정
     brush = alt.selection_interval(encodings=['x'])
 
-    # 2. 마우스 호버(세로줄) 설정 - X축 기준 가장 가까운 데이터 선택
+    # 2. 마우스 호버(세로줄) 설정
     nearest = alt.selection_point(nearest=True, on='mouseover', fields=['수집시간'], empty=False)
 
     # 기본 차트 정의
@@ -122,15 +121,13 @@ def create_interactive_chart(chart_data, target_date, title_prefix=""):
     )
 
     # --- [상단] 메인 상세 그래프 ---
-    # 데이터 라인
     lines = base.mark_line(point=True).encode(
-        # X축은 브러쉬(미니맵)와 연동
+        # X축은 브러쉬와 연동
         x=alt.X('수집시간', scale=alt.Scale(domain=brush)),
-        # Y축은 domainMin=0으로 고정하되, 상한선은 데이터에 맞춰 자동 조절 (Auto Scaling)
+        # Y축 자동 스케일링 (음수 방지)
         y=alt.Y('카운트', title='활동 수', scale=alt.Scale(domainMin=0, nice=True))
     )
 
-    # 투명한 점 (마우스 호버 감지용)
     selectors = base.mark_point().encode(
         x=alt.X('수집시간', scale=alt.Scale(domain=brush)),
         y=alt.Y('카운트', scale=alt.Scale(domainMin=0, nice=True)),
@@ -139,25 +136,22 @@ def create_interactive_chart(chart_data, target_date, title_prefix=""):
         nearest
     )
 
-    # 세로줄 (Rule)
     rules = base.mark_rule(color='gray').encode(
         x=alt.X('수집시간', scale=alt.Scale(domain=brush)),
         opacity=alt.condition(nearest, alt.value(0.5), alt.value(0)),
-        # [설정 3] 툴팁에서 '활동유형' 제거
+        # [수정됨] 툴팁에서 활동유형 제거
         tooltip=[
             alt.Tooltip('수집시간', format='%H시 %M분'),
             alt.Tooltip('카운트', format=',d')
         ]
     )
 
-    # 텍스트 포인트 (데이터 강조)
     points = base.mark_circle().encode(
         x=alt.X('수집시간', scale=alt.Scale(domain=brush)),
         y=alt.Y('카운트', scale=alt.Scale(domainMin=0, nice=True)),
         opacity=alt.condition(nearest, alt.value(1), alt.value(0))
     )
 
-    # 상단 차트 조합
     upper_chart = (lines + selectors + rules + points).properties(
         height=350,
         title=f"{title_prefix} 상세 활동 (하단을 드래그하여 확대)"
@@ -166,15 +160,14 @@ def create_interactive_chart(chart_data, target_date, title_prefix=""):
     # --- [하단] 미니맵 (Navigator) ---
     lower_chart = base.mark_area().encode(
         x=alt.X('수집시간', axis=alt.Axis(format='%H시', title='구간 선택 (드래그)'), scale=alt.Scale(domain=[start_time, end_time])),
-        y=alt.Y('카운트', axis=None, title=None), # Y축 숨김
-        opacity=alt.value(0.3) # 연하게 표시
+        y=alt.Y('카운트', axis=None, title=None),
+        opacity=alt.value(0.3)
     ).add_params(
         brush
     ).properties(
-        height=80 # [설정 2] 미니맵 높이를 키워 모바일 터치/드래그 용이하게 변경
+        height=80
     )
 
-    # 상단 + 하단 결합
     return (upper_chart & lower_chart)
 
 
@@ -197,9 +190,10 @@ def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
     user_trend = user_daily_df.groupby('수집시간')[['작성글수', '작성댓글수']].sum().reset_index()
     chart_data = user_trend.melt('수집시간', var_name='활동유형', value_name='카운트')
     
-    # 공통 차트 함수 사용
     chart = create_interactive_chart(chart_data, target_date, title_prefix=f"{nick}님의")
-    st.altair_chart(chart, use_container_width=True)
+    
+    # [핵심 수정] key를 추가하여 팝업이 뜰 때마다 새로운 차트로 초기화
+    st.altair_chart(chart, use_container_width=True, key=f"modal_chart_{user_id}_{target_date}")
     
     u_posts = user_daily_df['작성글수'].sum()
     u_comments = user_daily_df['작성댓글수'].sum()
@@ -263,9 +257,10 @@ if not df.empty:
             full_trend_df = pd.merge(trend_stats, trend_users, on='수집시간', how='left').fillna(0)
             chart_data = full_trend_df.melt('수집시간', var_name='활동유형', value_name='카운트')
             
-            # 공통 차트 함수 사용 (메인 그래프)
             chart = create_interactive_chart(chart_data, selected_date)
-            st.altair_chart(chart, use_container_width=True)
+            
+            # [핵심 수정] key에 날짜(selected_date)를 포함시켜 날짜 변경 시 차트 강제 초기화
+            st.altair_chart(chart, use_container_width=True, key=f"main_chart_{selected_date}")
             
             st.caption(f"💡 **하단의 작은 그래프**를 드래그하여 보고 싶은 구간을 선택하세요.")
 

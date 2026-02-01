@@ -7,6 +7,7 @@ import altair as alt
 import random
 import concurrent.futures
 from botocore.config import Config
+from datetime import datetime, timedelta
 
 # --- 페이지 기본 설정 ---
 st.set_page_config(page_title="ProjectMX Dashboard", layout="wide")
@@ -101,10 +102,14 @@ def load_data_from_r2():
     final_df['총활동수'] = final_df['작성글수'] + final_df['작성댓글수']
     return final_df
 
-# --- [수정된 차트 함수] 날짜 범위 고정 기능 추가 ---
+# --- [수정된 차트 함수] 데이터 타입 명시적 변환 추가 ---
 def create_brush_chart(chart_data, target_date):
-    # 1. 고정할 날짜 범위 계산 (00:00:00 ~ 23:59:59)
-    # .to_pydatetime()을 사용하여 Altair 호환성 문제(그래프 사라짐) 방지
+    # [핵심 수정 1] 데이터프레임의 시간 컬럼을 Pandas Timestamp가 아닌 Python native datetime으로 강제 변환
+    # Altair가 날짜를 인식할 때 발생하는 호환성 문제를 해결합니다.
+    chart_data = chart_data.copy()
+    chart_data['수집시간'] = chart_data['수집시간'].dt.to_pydatetime()
+
+    # [핵심 수정 2] 도메인 설정도 Python native datetime 사용
     start_time = pd.Timestamp(target_date).replace(hour=0, minute=0, second=0).to_pydatetime()
     end_time = pd.Timestamp(target_date).replace(hour=23, minute=59, second=59).to_pydatetime()
 
@@ -121,7 +126,7 @@ def create_brush_chart(chart_data, target_date):
     # 2. 상단 메인 차트 (터치해도 안 움직임, 브러쉬에 의해서만 움직임)
     upper = base.mark_line(point=True).encode(
         x=alt.X('수집시간', scale=alt.Scale(domain=brush), axis=alt.Axis(title='시간')),
-        y=alt.Y('카운트', title='활동 수'),
+        y=alt.Y('카운트', title='활동 수', scale=alt.Scale(domainMin=0, nice=True)),
         tooltip=['수집시간', '활동유형', '카운트']
     ).properties(
         height=350,
@@ -131,7 +136,7 @@ def create_brush_chart(chart_data, target_date):
     # 3. 하단 네비게이터 차트 (여기서 드래그)
     # [핵심] scale=alt.Scale(domain=[start_time, end_time]) 추가하여 범위 고정
     lower = base.mark_area().encode(
-        x=alt.X('수집시간', axis=alt.Axis(format='%H시'), 
+        x=alt.X('수집시간', axis=alt.Axis(format='%H시', title='전체 구간 (드래그하여 확대)'), 
                 scale=alt.Scale(domain=[start_time, end_time])), # <-- 이 부분이 범위를 고정합니다
         y=alt.Y('카운트', axis=None), # Y축 숨김
         opacity=alt.value(0.3)

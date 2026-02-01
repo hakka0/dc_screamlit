@@ -7,7 +7,7 @@ import altair as alt
 import random
 import concurrent.futures
 from botocore.config import Config
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta # [추가] datetime 모듈
 
 # --- 페이지 기본 설정 ---
 st.set_page_config(page_title="ProjectMX Dashboard", layout="wide")
@@ -102,48 +102,73 @@ def load_data_from_r2():
     final_df['총활동수'] = final_df['작성글수'] + final_df['작성댓글수']
     return final_df
 
-# --- [수정된 차트 함수] 데이터 타입 명시적 변환 추가 ---
-def create_brush_chart(chart_data, target_date):
-    # [핵심 수정 1] 데이터프레임의 시간 컬럼을 Pandas Timestamp가 아닌 Python native datetime으로 강제 변환
-    # Altair가 날짜를 인식할 때 발생하는 호환성 문제를 해결합니다.
-    chart_data = chart_data.copy()
-    chart_data['수집시간'] = chart_data['수집시간'].dt.to_pydatetime()
-
-    # [핵심 수정 2] 도메인 설정도 Python native datetime 사용
+# --- [수정된 차트 함수] 날짜 호환성 문제 해결 ---
+def create_navigator_chart(chart_data, target_date, title_prefix=""):
+    # [핵심 수정] Pandas Timestamp를 Python native datetime으로 변환 (.to_pydatetime())
+    # 이렇게 해야 Altair가 날짜 범위를 정확히 인식하고 그래프를 그립니다.
     start_time = pd.Timestamp(target_date).replace(hour=0, minute=0, second=0).to_pydatetime()
     end_time = pd.Timestamp(target_date).replace(hour=23, minute=59, second=59).to_pydatetime()
 
     # 기본 베이스 차트
     base = alt.Chart(chart_data).encode(
-        x=alt.X('수집시간', axis=alt.Axis(title='시간', format='%H시')),
-        color=alt.Color('활동유형', legend=alt.Legend(title="지표"), 
+        x=alt.X('수집시간', 
+                axis=alt.Axis(title='시간', format='%H시'), 
+                scale=alt.Scale(domain=[start_time, end_time])), 
+        color=alt.Color('활동유형', 
+                        legend=alt.Legend(title="지표"), 
                         scale=alt.Scale(domain=['액티브수', '작성글수', '작성댓글수'], range=['red', 'green', 'blue']))
     )
 
-    # 1. 구간 선택용 브러쉬 (X축 방향으로만 드래그 가능)
+    # 1. 구간 선택용 브러쉬
     brush = alt.selection_interval(encodings=['x'])
 
-    # 2. 상단 메인 차트 (터치해도 안 움직임, 브러쉬에 의해서만 움직임)
-    upper = base.mark_line(point=True).encode(
+    # 2. 마우스 호버(세로줄) 설정
+    nearest = alt.selection_point(nearest=True, on='mouseover', fields=['수집시간'], empty=False)
+
+    # --- 상단 메인 차트 ---
+    lines = base.mark_line(point=True).encode(
         x=alt.X('수집시간', scale=alt.Scale(domain=brush), axis=alt.Axis(title='시간')),
-        y=alt.Y('카운트', title='활동 수', scale=alt.Scale(domainMin=0, nice=True)),
-        tooltip=['수집시간', '활동유형', '카운트']
-    ).properties(
-        height=350,
-        title="상세 활동 (하단 그래프를 드래그하여 구간 선택)"
+        y=alt.Y('카운트', title='활동 수', scale=alt.Scale(domainMin=0, nice=True))
     )
 
-    # 3. 하단 네비게이터 차트 (여기서 드래그)
-    # [핵심] scale=alt.Scale(domain=[start_time, end_time]) 추가하여 범위 고정
+    selectors = base.mark_point().encode(
+        x=alt.X('수집시간', scale=alt.Scale(domain=brush)),
+        y=alt.Y('카운트', scale=alt.Scale(domainMin=0, nice=True)),
+        opacity=alt.value(0)
+    ).add_params(
+        nearest
+    )
+
+    rules = base.mark_rule(color='gray').encode(
+        x=alt.X('수집시간', scale=alt.Scale(domain=brush)),
+        opacity=alt.condition(nearest, alt.value(0.5), alt.value(0)),
+        tooltip=[
+            alt.Tooltip('수집시간', format='%H시 %M분'),
+            alt.Tooltip('카운트', format=',d')
+        ]
+    )
+
+    points = base.mark_circle().encode(
+        x=alt.X('수집시간', scale=alt.Scale(domain=brush)),
+        y=alt.Y('카운트', scale=alt.Scale(domainMin=0, nice=True)),
+        opacity=alt.condition(nearest, alt.value(1), alt.value(0))
+    )
+
+    upper = (lines + selectors + rules + points).properties(
+        height=350,
+        title=f"{title_prefix} 상세 활동 (하단 그래프를 드래그하여 구간 선택)"
+    )
+
+    # --- 하단 네비게이터 차트 ---
     lower = base.mark_area().encode(
         x=alt.X('수집시간', axis=alt.Axis(format='%H시', title='전체 구간 (드래그하여 확대)'), 
-                scale=alt.Scale(domain=[start_time, end_time])), # <-- 이 부분이 범위를 고정합니다
-        y=alt.Y('카운트', axis=None), # Y축 숨김
+                scale=alt.Scale(domain=[start_time, end_time])),
+        y=alt.Y('카운트', axis=None), 
         opacity=alt.value(0.3)
     ).add_params(
         brush
     ).properties(
-        height=60 
+        height=60
     )
 
     return upper & lower
@@ -167,8 +192,7 @@ def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
     user_trend = user_daily_df.groupby('수집시간')[['작성글수', '작성댓글수']].sum().reset_index()
     chart_data = user_trend.melt('수집시간', var_name='활동유형', value_name='카운트')
     
-    # [수정] target_date 전달
-    chart = create_brush_chart(chart_data, target_date)
+    chart = create_navigator_chart(chart_data, target_date, title_prefix=f"{nick}님의")
     st.altair_chart(chart, use_container_width=True, key=f"modal_{user_id}_{target_date}")
     
     u_posts = user_daily_df['작성글수'].sum()
@@ -233,8 +257,8 @@ if not df.empty:
             full_trend_df = pd.merge(trend_stats, trend_users, on='수집시간', how='left').fillna(0)
             chart_data = full_trend_df.melt('수집시간', var_name='활동유형', value_name='카운트')
             
-            # [수정] selected_date 전달
-            chart = create_brush_chart(chart_data, selected_date)
+            # 차트 생성
+            chart = create_navigator_chart(chart_data, selected_date)
             st.altair_chart(chart, use_container_width=True, key=f"main_chart_{selected_date}")
             
             st.caption(f"💡 **하단의 작은 그래프**를 드래그하여 보고 싶은 구간을 선택하세요.")

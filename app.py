@@ -101,6 +101,48 @@ def load_data_from_r2():
     final_df['총활동수'] = final_df['작성글수'] + final_df['작성댓글수']
     return final_df
 
+# --- [신규 함수] 네비게이터(미니맵)가 포함된 차트 생성 ---
+def create_navigator_chart(chart_data, target_date, title_prefix=""):
+    # 1. 날짜 범위 고정 (해당 날짜의 00:00:00 ~ 23:59:59)
+    # 이것이 네비게이터가 흔들리지 않게 잡아주는 핵심입니다.
+    start_time = pd.Timestamp(target_date).replace(hour=0, minute=0, second=0)
+    end_time = pd.Timestamp(target_date).replace(hour=23, minute=59, second=59)
+
+    # 2. 브러쉬 설정 (X축 드래그)
+    brush = alt.selection_interval(encodings=['x'])
+
+    # 3. 기본 차트 설정 (X축 범위를 start~end로 고정)
+    base = alt.Chart(chart_data).encode(
+        x=alt.X('수집시간', 
+                axis=alt.Axis(title='시간', format='%H시'), 
+                scale=alt.Scale(domain=[start_time, end_time])), # [중요] 범위 고정
+        color=alt.Color('활동유형', 
+                        legend=alt.Legend(title="지표"), 
+                        scale=alt.Scale(domain=['액티브수', '작성글수', '작성댓글수'], range=['red', 'green', 'blue']))
+    )
+
+    # 4. 상단 차트 (브러쉬에 반응)
+    upper = base.mark_line(point=True).encode(
+        x=alt.X('수집시간', scale=alt.Scale(domain=brush), axis=alt.Axis(title='시간')),
+        y=alt.Y('카운트', title='활동 수', scale=alt.Scale(domainMin=0, nice=True)),
+        tooltip=['수집시간', '활동유형', '카운트']
+    ).properties(
+        height=350,
+        title=f"{title_prefix} 상세 활동 (하단을 드래그하여 확대)"
+    )
+
+    # 5. 하단 차트 (네비게이터 - 고정된 범위)
+    lower = base.mark_area().encode(
+        y=alt.Y('카운트', axis=None), # Y축 숨김
+        opacity=alt.value(0.3)
+    ).add_params(
+        brush
+    ).properties(
+        height=60
+    )
+
+    return upper & lower
+
 # --- 유저 상세 정보 모달 ---
 @st.dialog("👤 유저 상세 활동 분석")
 def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
@@ -120,43 +162,9 @@ def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
     user_trend = user_daily_df.groupby('수집시간')[['작성글수', '작성댓글수']].sum().reset_index()
     chart_data = user_trend.melt('수집시간', var_name='활동유형', value_name='카운트')
     
-    # 0시 ~ 24시 고정 범위 설정
-    zoom_start = pd.to_datetime(target_date).replace(hour=0, minute=0, second=0)
-    zoom_end = pd.to_datetime(target_date).replace(hour=23, minute=59, second=59)
-
-    # [수정 1] 네비게이터용 브러쉬 생성
-    brush = alt.selection_interval(encodings=['x'])
-
-    # Y축 최대값 계산
-    current_view_data = chart_data[chart_data['수집시간'].dt.date == target_date]
-    if not current_view_data.empty:
-        current_max = current_view_data['카운트'].max()
-        y_max = 5 if pd.isna(current_max) or current_max < 5 else current_max * 1.1
-    else:
-        y_max = 5
-
-    # 기본 차트
-    base = alt.Chart(chart_data).encode(
-        x=alt.X('수집시간', axis=alt.Axis(format='%H시', title='시간'), scale=alt.Scale(domain=[zoom_start, zoom_end])),
-        color=alt.Color('활동유형', legend=alt.Legend(title="활동"), scale=alt.Scale(domain=['작성글수', '작성댓글수'], range=['green', 'blue']))
-    )
-
-    # 상단 상세 차트 (브러쉬에 따라 줌)
-    upper = base.mark_line(point=True).encode(
-        x=alt.X('수집시간', scale=alt.Scale(domain=brush), axis=alt.Axis(title='시간')),
-        y=alt.Y('카운트', title='활동 수', scale=alt.Scale(domain=[0, y_max], domainMin=0)),
-        tooltip=['수집시간', '활동유형', '카운트']
-    ).properties(height=350, title=f"{nick}님의 시간대별 활동 추이")
-
-    # [수정 2] 하단 네비게이터 차트 (0~24시 고정)
-    lower = base.mark_area().encode(
-        x=alt.X('수집시간', axis=alt.Axis(title='구간 선택'), scale=alt.Scale(domain=[zoom_start, zoom_end])), # 여기를 고정
-        y=alt.Y('카운트', axis=None),
-        opacity=alt.value(0.3)
-    ).add_params(brush).properties(height=60)
-
-    # [수정 3] key 추가 (그래프 사라짐 방지)
-    st.altair_chart(upper & lower, use_container_width=True, key=f"modal_{user_id}_{target_date}")
+    # [수정] 네비게이터 차트 적용 + Key 추가 (그래프 사라짐 방지)
+    chart = create_navigator_chart(chart_data, target_date, title_prefix=f"{nick}님의")
+    st.altair_chart(chart, use_container_width=True, key=f"modal_{user_id}_{target_date}")
     
     u_posts = user_daily_df['작성글수'].sum()
     u_comments = user_daily_df['작성댓글수'].sum()
@@ -220,44 +228,9 @@ if not df.empty:
             full_trend_df = pd.merge(trend_stats, trend_users, on='수집시간', how='left').fillna(0)
             chart_data = full_trend_df.melt('수집시간', var_name='활동유형', value_name='카운트')
             
-            # 0시 ~ 24시 고정 범위 설정
-            zoom_start = pd.to_datetime(selected_date).replace(hour=0, minute=0, second=0)
-            zoom_end = pd.to_datetime(selected_date).replace(hour=23, minute=59, second=59)
-
-            # [수정 1] 네비게이터용 브러쉬 생성
-            brush = alt.selection_interval(encodings=['x'])
-            
-            # Y축 최대값 계산
-            daily_view_data = chart_data[chart_data['수집시간'].dt.date == selected_date]
-            if not daily_view_data.empty:
-                current_max = daily_view_data['카운트'].max()
-                y_domain_max = 10 if pd.isna(current_max) or current_max < 10 else current_max * 1.1
-            else:
-                y_domain_max = 10
-
-            # 기본 차트
-            base = alt.Chart(chart_data).encode(
-                x=alt.X('수집시간', axis=alt.Axis(format='%m월 %d일 %H시', title='시간', tickCount=10), scale=alt.Scale(domain=[zoom_start, zoom_end])),
-                color=alt.Color('활동유형', legend=alt.Legend(title="지표"), scale=alt.Scale(domain=['액티브수', '작성글수', '작성댓글수'], range=['red', 'green', 'blue']))
-            )
-
-            # 상단 상세 차트 (브러쉬에 따라 줌)
-            upper = base.mark_line(point=True).encode(
-                x=alt.X('수집시간', scale=alt.Scale(domain=brush), axis=alt.Axis(title='시간')),
-                y=alt.Y('카운트', title='활동 수', scale=alt.Scale(domain=[0, y_domain_max], domainMin=0)),
-                tooltip=[alt.Tooltip('수집시간', format='%Y-%m-%d %H:%M'), alt.Tooltip('활동유형'), alt.Tooltip('카운트')]
-            ).properties(height=450)
-
-            # [수정 2] 하단 네비게이터 차트 (0~24시 고정)
-            lower = base.mark_area().encode(
-                x=alt.X('수집시간', axis=alt.Axis(format='%H시', title='전체 구간 (드래그하여 확대)'), 
-                        scale=alt.Scale(domain=[zoom_start, zoom_end])), # 여기를 고정
-                y=alt.Y('카운트', axis=None),
-                opacity=alt.value(0.3)
-            ).add_params(brush).properties(height=80)
-
-            # [수정 3] key 추가 (그래프 사라짐 방지)
-            st.altair_chart(upper & lower, use_container_width=True, key=f"main_chart_{selected_date}")
+            # [수정] 네비게이터 차트 적용 + Key 추가
+            chart = create_navigator_chart(chart_data, selected_date)
+            st.altair_chart(chart, use_container_width=True, key=f"main_{selected_date}")
             
             st.caption(f"💡 **하단의 작은 그래프**를 드래그하여 보고 싶은 구간을 선택하세요.")
 

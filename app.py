@@ -258,7 +258,7 @@ if not df.empty:
                 max_value=time_filter_end,
                 value=(time_filter_start, time_filter_end), # 기본값: 필터 범위 전체
                 format="HH:mm",
-                step=timedelta(hours=1)
+                step=timedelta(minutes=30)
             )
 
             # 슬라이더 값에 따라 최종 그래프 데이터 필터링

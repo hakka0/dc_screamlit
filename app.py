@@ -102,10 +102,11 @@ def load_data_from_r2():
     final_df['총활동수'] = final_df['작성글수'] + final_df['작성댓글수']
     return final_df
 
-# --- [수정됨] 차트 함수: X축 전용 스크롤 적용 ---
-def create_scrollable_chart(chart_data, title_prefix=""):
-    # 1. 줌 & 팬 설정 (X축 방향으로만 이동/확대 가능)
-    # bind='scales'를 쓰되 encodings=['x']로 제한하여 Y축 고정
+# --- [수정됨] 차트 함수: X축 범위 제한 적용 ---
+def create_scrollable_chart(chart_data, x_domain, title_prefix=""):
+    # x_domain: [datetime_start, datetime_end] 리스트
+    
+    # 1. 줌 & 팬 설정 (X축 방향으로만)
     zoom = alt.selection_interval(bind='scales', encodings=['x'])
 
     # 2. 마우스 호버(세로줄) 설정
@@ -113,18 +114,19 @@ def create_scrollable_chart(chart_data, title_prefix=""):
 
     # 기본 차트 정의
     base = alt.Chart(chart_data).encode(
-        x=alt.X('수집시간', axis=alt.Axis(title='시간', format='%H시 %M분')),
+        # [핵심] scale domain을 시간대 필터 범위로 고정
+        x=alt.X('수집시간', axis=alt.Axis(title='시간', format='%H시 %M분'), 
+                scale=alt.Scale(domain=x_domain)), 
         color=alt.Color('활동유형', legend=alt.Legend(title="지표"), 
                         scale=alt.Scale(domain=['액티브수', '작성글수', '작성댓글수'], range=['red', 'green', 'blue']))
     )
 
     # 데이터 라인
     lines = base.mark_line(point=True).encode(
-        # Y축은 데이터에 맞춰 자동 스케일링되지만, 사용자가 드래그해서 움직일 수는 없음 (X축만 가능)
         y=alt.Y('카운트', title='활동 수', scale=alt.Scale(domainMin=0, nice=True))
     )
 
-    # 투명 포인트 (호버 감지용)
+    # 투명 포인트
     selectors = base.mark_point().encode(
         x='수집시간',
         opacity=alt.value(0)
@@ -149,12 +151,12 @@ def create_scrollable_chart(chart_data, title_prefix=""):
         opacity=alt.condition(nearest, alt.value(1), alt.value(0))
     )
 
-    # 차트 결합 및 줌 기능 추가
+    # 차트 결합
     final_chart = (lines + selectors + rules + points).add_params(
-        zoom  # [핵심] 차트에 줌/팬 기능 연결
+        zoom
     ).properties(
         height=400,
-        title=f"{title_prefix} 상세 활동 추이 (좌우 드래그/휠로 이동 및 확대)"
+        title=f"{title_prefix} 상세 활동 추이 (좌우 드래그로 이동)"
     )
 
     return final_chart
@@ -179,7 +181,13 @@ def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
     user_trend = user_daily_df.groupby('수집시간')[['작성글수', '작성댓글수']].sum().reset_index()
     chart_data = user_trend.melt('수집시간', var_name='활동유형', value_name='카운트')
     
-    chart = create_scrollable_chart(chart_data, title_prefix=f"{nick}님의")
+    # 모달 내 그래프는 하루 전체(0~24)를 기본으로 보여줌 (필요 시 수정 가능)
+    # 여기서는 데이터가 있는 전체 범위를 보여주도록 자동 설정하거나 0-24로 고정할 수 있습니다.
+    # 사용자가 헷갈리지 않게 0-24시 전체 범위로 고정합니다.
+    start_dt = datetime.combine(target_date, time(0, 0))
+    end_dt = datetime.combine(target_date, time(23, 59, 59))
+    
+    chart = create_scrollable_chart(chart_data, x_domain=[start_dt, end_dt], title_prefix=f"{nick}님의")
     st.altair_chart(chart, use_container_width=True)
     
     u_posts = user_daily_df['작성글수'].sum()
@@ -240,26 +248,36 @@ if not df.empty:
             st.markdown("---")
             st.subheader("📊 시간대별 활동 그래프")
 
-            # 데이터 집계
-            trend_stats = df.groupby('수집시간')[['작성글수', '작성댓글수']].sum().reset_index()
-            trend_users = df.groupby(['수집시간', '닉네임', 'ID(IP)', '유저타입']).size().reset_index().groupby('수집시간').size().reset_index(name='액티브수')
+            # 데이터 집계 (필터링된 데이터 사용)
+            # 여기서는 시간대 필터가 적용된 filtered_df를 바로 사용하지 않고
+            # 그래프 표현을 위해 '전체 시간대 데이터'에서 필요한 부분만 자르는 방식이 안전할 수도 있으나,
+            # '필터링된 데이터만 보여달라'는 요청에 따라 filtered_df를 기반으로 집계합니다.
+            
+            # 주의: filtered_df는 이미 시간 필터가 적용되어 있음.
+            trend_stats = filtered_df.groupby('수집시간')[['작성글수', '작성댓글수']].sum().reset_index()
+            trend_users = filtered_df.groupby(['수집시간', '닉네임', 'ID(IP)', '유저타입']).size().reset_index().groupby('수집시간').size().reset_index(name='액티브수')
             full_trend_df = pd.merge(trend_stats, trend_users, on='수집시간', how='left').fillna(0)
             
-            # 현재 선택된 날짜의 데이터만 추출
-            daily_data = full_trend_df[full_trend_df['수집시간'].dt.date == selected_date]
-
-            if daily_data.empty:
-                st.warning("선택한 날짜에 데이터가 없습니다.")
+            if full_trend_df.empty:
+                st.warning("선택한 시간대에 표시할 데이터가 없습니다.")
             else:
-                chart_data = daily_data.melt('수집시간', var_name='활동유형', value_name='카운트')
+                chart_data = full_trend_df.melt('수집시간', var_name='활동유형', value_name='카운트')
                 
-                # [수정] 스크롤 가능한 차트 생성
-                chart = create_scrollable_chart(chart_data)
+                # [핵심] 차트의 X축 범위를 슬라이더 값(시간대 필터)으로 계산
+                chart_start = datetime.combine(selected_date, time(start_hour, 0))
+                if end_hour == 24:
+                    chart_end = datetime.combine(selected_date, time(23, 59, 59))
+                else:
+                    # end_hour가 14면 14:00까지 보여주거나, 데이터가 <14시 이므로 13:59까지임.
+                    # 그래프 가시성을 위해 축은 14:00까지 설정
+                    chart_end = datetime.combine(selected_date, time(end_hour, 0))
+
+                # 차트 생성 (x_domain 전달)
+                chart = create_scrollable_chart(chart_data, x_domain=[chart_start, chart_end])
                 
-                # key에 날짜를 넣어 날짜 변경 시 차트 초기화 (그래프 꼬임 방지)
-                st.altair_chart(chart, use_container_width=True, key=f"main_chart_{selected_date}")
+                st.altair_chart(chart, use_container_width=True, key=f"main_chart_{selected_date}_{start_hour}_{end_hour}")
                 
-                st.caption(f"💡 그래프 영역을 **좌우로 드래그**하면 이동하고, **마우스 휠**로 확대/축소할 수 있습니다.")
+                st.caption(f"💡 그래프 영역을 **좌우로 드래그**하거나 **휠**을 사용하여 확대/축소할 수 있습니다.")
 
         # --- [Tab 2] 유저 랭킹 ---
         elif selected_tab == "🏆 유저 랭킹":

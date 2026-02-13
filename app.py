@@ -102,23 +102,21 @@ def load_data_from_r2():
     final_df['총활동수'] = final_df['작성글수'] + final_df['작성댓글수']
     return final_df
 
-# --- [수정됨] 차트 함수: 통합 툴팁(Pivot) 적용 ---
+# --- [수정됨] 차트 함수: 포맷 변경 및 호버 센서 추가 ---
 def create_fixed_chart(chart_data, title_prefix=""):
-    # 1. 툴팁용 데이터 재구조화 (Long -> Wide Format)
-    # 한 시간대에 모든 지표가 열(Column)로 존재해야 툴팁 하나에 다 보여줄 수 있음
+    # 1. 툴팁용 데이터 (Pivot)
     base_df = chart_data.pivot(index='수집시간', columns='활동유형', values='카운트').reset_index()
-    base_df.columns.name = None # 인덱스 이름 제거
+    base_df.columns.name = None 
     
-    # 누락된 컬럼이 있을 경우 0으로 채움 (안전장치)
     for col in ['액티브수', '작성글수', '작성댓글수']:
         if col not in base_df.columns:
             base_df[col] = 0
     base_df = base_df.fillna(0)
 
-    # 공통 X축 설정
-    x_axis = alt.X('수집시간', axis=alt.Axis(title='시간', format='%H시 %M분'))
+    # [수정 1] 공통 X축 설정 (분 단위 생략: %H시)
+    x_axis = alt.X('수집시간', axis=alt.Axis(title='시간', format='%H시'))
 
-    # 2. 메인 라인 차트 (기존 Long 데이터 사용 - 색상 분리 용이)
+    # 2. 메인 라인 차트
     lines = alt.Chart(chart_data).mark_line(point=True).encode(
         x=x_axis,
         y=alt.Y('카운트', title='활동 수', scale=alt.Scale(domainMin=0, nice=True)),
@@ -126,28 +124,34 @@ def create_fixed_chart(chart_data, title_prefix=""):
                         scale=alt.Scale(domain=['액티브수', '작성글수', '작성댓글수'], range=['red', 'green', 'blue']))
     )
 
-    # 3. 통합 툴팁 레이어 (Wide 데이터 사용)
-    # 마우스 호버 감지용 (nearest)
+    # 3. 마우스 호버 감지 설정
     nearest = alt.selection_point(nearest=True, on='mouseover', fields=['수집시간'], empty=False)
 
-    # 회색 세로선(Rule) + 통합 툴팁
-    rules = alt.Chart(base_df).mark_rule(color='gray').encode(
+    # [수정 2] 투명 센서 레이어 추가 (마우스 감지용)
+    # 이것이 있어야 마우스가 근처에만 가도 툴팁이 반응합니다.
+    selectors = alt.Chart(base_df).mark_point().encode(
         x=x_axis,
-        opacity=alt.condition(nearest, alt.value(0.5), alt.value(0)),
-        tooltip=[
-            # [핵심] 여기서 모든 지표를 한 번에 보여줍니다.
-            alt.Tooltip('수집시간', title='🕒 시간', format='%H시 %M분'),
-            alt.Tooltip('액티브수', title='👥 액티브', format=','),
-            alt.Tooltip('작성글수', title='📝 작성글', format=','),
-            alt.Tooltip('작성댓글수', title='💬 작성댓글', format=',')
-        ]
+        opacity=alt.value(0), # 투명하게 설정
     ).add_params(
         nearest
     )
 
-    # 4. 차트 결합 (라인 + 툴팁선)
-    # interactive() 제거됨 -> 하단 슬라이더로만 조작
-    final_chart = (lines + rules).properties(
+    # 4. 회색 세로선(Rule) + 통합 툴팁
+    rules = alt.Chart(base_df).mark_rule(color='gray').encode(
+        x=x_axis,
+        opacity=alt.condition(nearest, alt.value(0.5), alt.value(0)),
+        tooltip=[
+            # [수정 1] 툴팁 포맷도 %H시로 변경
+            alt.Tooltip('수집시간', title='🕒 시간', format='%H시'),
+            alt.Tooltip('액티브수', title='👥 액티브', format=','),
+            alt.Tooltip('작성글수', title='📝 작성글', format=','),
+            alt.Tooltip('작성댓글수', title='💬 작성댓글', format=',')
+        ]
+    )
+
+    # 5. 차트 결합 (라인 + 센서 + 룰)
+    # 순서: 라인 -> 센서(맨 위) -> 룰
+    final_chart = (lines + selectors + rules).properties(
         height=400,
         title=f"{title_prefix} 상세 활동 추이"
     )
@@ -255,7 +259,7 @@ if not df.empty:
                 min_value=time_filter_start,
                 max_value=time_filter_end,
                 value=(time_filter_start, time_filter_end), 
-                format="HH:mm",
+                format="HH시", # 슬라이더 포맷도 심플하게 변경
                 step=timedelta(minutes=30)
             )
 

@@ -102,51 +102,52 @@ def load_data_from_r2():
     final_df['총활동수'] = final_df['작성글수'] + final_df['작성댓글수']
     return final_df
 
-# --- [수정됨] 차트 함수: 내부 드래그 제거, 외부 슬라이더에 의존 ---
+# --- [수정됨] 차트 함수: 통합 툴팁(Pivot) 적용 ---
 def create_fixed_chart(chart_data, title_prefix=""):
-    # 1. 마우스 호버(세로줄) 설정
-    nearest = alt.selection_point(nearest=True, on='mouseover', fields=['수집시간'], empty=False)
+    # 1. 툴팁용 데이터 재구조화 (Long -> Wide Format)
+    # 한 시간대에 모든 지표가 열(Column)로 존재해야 툴팁 하나에 다 보여줄 수 있음
+    base_df = chart_data.pivot(index='수집시간', columns='활동유형', values='카운트').reset_index()
+    base_df.columns.name = None # 인덱스 이름 제거
+    
+    # 누락된 컬럼이 있을 경우 0으로 채움 (안전장치)
+    for col in ['액티브수', '작성글수', '작성댓글수']:
+        if col not in base_df.columns:
+            base_df[col] = 0
+    base_df = base_df.fillna(0)
 
-    # 기본 차트 정의
-    base = alt.Chart(chart_data).encode(
-        x=alt.X('수집시간', axis=alt.Axis(title='시간', format='%H시 %M분')),
+    # 공통 X축 설정
+    x_axis = alt.X('수집시간', axis=alt.Axis(title='시간', format='%H시 %M분'))
+
+    # 2. 메인 라인 차트 (기존 Long 데이터 사용 - 색상 분리 용이)
+    lines = alt.Chart(chart_data).mark_line(point=True).encode(
+        x=x_axis,
+        y=alt.Y('카운트', title='활동 수', scale=alt.Scale(domainMin=0, nice=True)),
         color=alt.Color('활동유형', legend=alt.Legend(title="지표"), 
                         scale=alt.Scale(domain=['액티브수', '작성글수', '작성댓글수'], range=['red', 'green', 'blue']))
     )
 
-    # 데이터 라인
-    lines = base.mark_line(point=True).encode(
-        # Y축 자동 스케일링 (domainMin=0)
-        y=alt.Y('카운트', title='활동 수', scale=alt.Scale(domainMin=0, nice=True))
-    )
+    # 3. 통합 툴팁 레이어 (Wide 데이터 사용)
+    # 마우스 호버 감지용 (nearest)
+    nearest = alt.selection_point(nearest=True, on='mouseover', fields=['수집시간'], empty=False)
 
-    # 투명 포인트 (호버 감지용)
-    selectors = base.mark_point().encode(
-        x='수집시간',
-        opacity=alt.value(0)
+    # 회색 세로선(Rule) + 통합 툴팁
+    rules = alt.Chart(base_df).mark_rule(color='gray').encode(
+        x=x_axis,
+        opacity=alt.condition(nearest, alt.value(0.5), alt.value(0)),
+        tooltip=[
+            # [핵심] 여기서 모든 지표를 한 번에 보여줍니다.
+            alt.Tooltip('수집시간', title='🕒 시간', format='%H시 %M분'),
+            alt.Tooltip('액티브수', title='👥 액티브', format=','),
+            alt.Tooltip('작성글수', title='📝 작성글', format=','),
+            alt.Tooltip('작성댓글수', title='💬 작성댓글', format=',')
+        ]
     ).add_params(
         nearest
     )
 
-    # 툴팁 (세로줄)
-    rules = base.mark_rule(color='gray').encode(
-        x='수집시간',
-        opacity=alt.condition(nearest, alt.value(0.5), alt.value(0)),
-        tooltip=[
-            alt.Tooltip('수집시간', format='%H시 %M분'),
-            alt.Tooltip('카운트', format=',d')
-        ]
-    )
-
-    # 데이터 포인트 강조
-    points = base.mark_circle().encode(
-        x='수집시간',
-        y='카운트',
-        opacity=alt.condition(nearest, alt.value(1), alt.value(0))
-    )
-
-    # [핵심] 차트 자체의 interactive(드래그) 기능 제거
-    final_chart = (lines + selectors + rules + points).properties(
+    # 4. 차트 결합 (라인 + 툴팁선)
+    # interactive() 제거됨 -> 하단 슬라이더로만 조작
+    final_chart = (lines + rules).properties(
         height=400,
         title=f"{title_prefix} 상세 활동 추이"
     )
@@ -248,15 +249,12 @@ if not df.empty:
             # [2차 필터] 현재 선택된 날짜의 데이터만 추출
             daily_data = full_trend_df[full_trend_df['수집시간'].dt.date == selected_date]
 
-            # --- [핵심 수정] 하단 스크롤바(슬라이더) 범위 제한 ---
-            # 슬라이더의 최소/최대값을 상단 "시간대 필터"와 일치시킵니다.
-            # 사용자는 이 범위를 벗어나서 스크롤할 수 없습니다.
-            
+            # --- 하단 스크롤바(슬라이더) ---
             zoom_range = st.slider(
                 "🔎 구간 확대 및 이동 (아래 바를 움직여 그래프를 조절하세요)",
                 min_value=time_filter_start,
                 max_value=time_filter_end,
-                value=(time_filter_start, time_filter_end), # 기본값: 필터 범위 전체
+                value=(time_filter_start, time_filter_end), 
                 format="HH:mm",
                 step=timedelta(minutes=30)
             )
@@ -271,7 +269,7 @@ if not df.empty:
             if visible_data.empty:
                 st.warning("선택한 구간에 데이터가 없습니다.")
             else:
-                # 필터링된 데이터로 그래프 그리기 (차트 내부 드래그는 꺼져있음)
+                # 필터링된 데이터로 그래프 그리기 (통합 툴팁 적용됨)
                 chart_data = visible_data.melt('수집시간', var_name='활동유형', value_name='카운트')
                 chart = create_fixed_chart(chart_data)
                 

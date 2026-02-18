@@ -9,17 +9,19 @@ import concurrent.futures
 from botocore.config import Config
 from datetime import datetime, time, timedelta
 
+# [추가됨] AgGrid 라이브러리 임포트
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
+
 # --- 페이지 기본 설정 ---
 st.set_page_config(page_title="ProjectMX Dashboard", layout="wide")
 
-# --- CSS 주입 (버튼 스타일 개선 포함) ---
+# --- CSS 주입 ---
 st.markdown("""
     <style>
         [data-testid="stElementToolbar"] { display: none; }
         header[data-testid="stHeader"] { visibility: hidden; }
         footer { visibility: hidden; }
         
-        /* 라디오 버튼 스타일 */
         div[role="radiogroup"] label > div:first-child { display: none !important; }
         div[role="radiogroup"] label {
             background-color: #ffffff;
@@ -38,12 +40,6 @@ st.markdown("""
             color: white !important;
             font-weight: bold;
         }
-        
-        /* 카드 뷰 스타일 */
-        div[data-testid="stVerticalBlockBorderWrapper"] {
-            border-radius: 10px;
-        }
-        
         div[data-testid="stSelectbox"] > div > div { min-height: 46px; }
     </style>
 """, unsafe_allow_html=True)
@@ -109,9 +105,8 @@ def load_data_from_r2():
     final_df['총활동수'] = final_df['작성글수'] + final_df['작성댓글수']
     return final_df
 
-# --- 차트 함수: 통합 툴팁(Pivot) 및 투명 센서 적용 ---
+# --- [수정됨] 차트 함수 ---
 def create_fixed_chart(chart_data, title_prefix=""):
-    # 1. 툴팁용 데이터 (Pivot)
     base_df = chart_data.pivot(index='수집시간', columns='활동유형', values='카운트').reset_index()
     base_df.columns.name = None 
     
@@ -120,10 +115,8 @@ def create_fixed_chart(chart_data, title_prefix=""):
             base_df[col] = 0
     base_df = base_df.fillna(0)
 
-    # 공통 X축 설정
     x_axis = alt.X('수집시간', axis=alt.Axis(title='시간', format='%H시'))
 
-    # 툴팁 구성
     tooltip_config = [
         alt.Tooltip('수집시간', title='🕒 시간', format='%H시'),
         alt.Tooltip('액티브수', title='👥 액티브', format=','),
@@ -131,7 +124,6 @@ def create_fixed_chart(chart_data, title_prefix=""):
         alt.Tooltip('작성댓글수', title='💬 작성댓글', format=',')
     ]
 
-    # 2. 메인 라인 차트
     lines = alt.Chart(chart_data).mark_line(point=True).encode(
         x=x_axis,
         y=alt.Y('카운트', title='활동 수', scale=alt.Scale(domainMin=0, nice=True)),
@@ -139,10 +131,8 @@ def create_fixed_chart(chart_data, title_prefix=""):
                         scale=alt.Scale(domain=['액티브수', '작성글수', '작성댓글수'], range=['red', 'green', 'blue']))
     )
 
-    # 3. 마우스 호버 감지 설정
     nearest = alt.selection_point(nearest=True, on='mouseover', fields=['수집시간'], empty=False)
 
-    # 투명 센서 레이어
     selectors = alt.Chart(base_df).mark_point().encode(
         x=x_axis,
         opacity=alt.value(0), 
@@ -151,14 +141,12 @@ def create_fixed_chart(chart_data, title_prefix=""):
         nearest
     )
 
-    # 4. 회색 세로선
     rules = alt.Chart(base_df).mark_rule(color='gray').encode(
         x=x_axis,
         opacity=alt.condition(nearest, alt.value(0.5), alt.value(0)),
         tooltip=tooltip_config
     )
 
-    # 5. 차트 결합
     final_chart = (lines + selectors + rules).properties(
         height=400,
         title=f"{title_prefix} 상세 활동 추이"
@@ -208,10 +196,8 @@ if not df.empty:
         selected_date = st.date_input("📅 날짜 선택", value=max_date, min_value=min_date, max_value=max_date)
 
     with st_time_col:
-        # 상단 필터용 슬라이더
         start_hour, end_hour = st.slider("⏰ 시간대 필터", 0, 24, (0, 24), step=1, format="%d시")
 
-    # [1차 필터]
     day_filtered_df = df[df['수집시간'].dt.date == selected_date]
     
     if end_hour == 24:
@@ -252,15 +238,12 @@ if not df.empty:
             st.markdown("---")
             st.subheader("📊 시간대별 활동 그래프")
 
-            # 데이터 집계
             trend_stats = df.groupby('수집시간')[['작성글수', '작성댓글수']].sum().reset_index()
             trend_users = df.groupby(['수집시간', '닉네임', 'ID(IP)', '유저타입']).size().reset_index().groupby('수집시간').size().reset_index(name='액티브수')
             full_trend_df = pd.merge(trend_stats, trend_users, on='수집시간', how='left').fillna(0)
             
-            # [2차 필터]
             daily_data = full_trend_df[full_trend_df['수집시간'].dt.date == selected_date]
 
-            # 하단 슬라이더
             zoom_range = st.slider(
                 "🔎 구간 확대 및 이동 (아래 바를 움직여 그래프를 조절하세요)",
                 min_value=time_filter_start,
@@ -270,7 +253,6 @@ if not df.empty:
                 step=timedelta(minutes=30)
             )
 
-            # 슬라이더 값에 따라 최종 그래프 데이터 필터링
             view_start, view_end = zoom_range
             visible_data = daily_data[
                 (daily_data['수집시간'] >= view_start) & 
@@ -284,44 +266,68 @@ if not df.empty:
                 chart = create_fixed_chart(chart_data)
                 st.altair_chart(chart, use_container_width=True, key=f"main_chart_{selected_date}")
 
-        # --- [Tab 2] 유저 랭킹 (리스트 뷰 적용) ---
+        # --- [Tab 2] 유저 랭킹 (AgGrid 적용) ---
         elif selected_tab == "🏆 유저 랭킹":
-            st.subheader("🔥 Top 20 활동 유저")
-            st.caption("각 유저의 오른쪽 '분석' 버튼을 누르면 상세 그래프가 나타납니다.")
+            st.subheader("🔥 Top 20")
+            st.caption("표의 행을 클릭하면 상세 그래프가 나타납니다.")
 
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
-            top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20).reset_index(drop=True)
+            top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
+            top_users = top_users.rename(columns={'유저타입': '계정타입'})
             
-            # [핵심] 데이터프레임 대신 리스트(Card) 형태로 출력
-            for idx, row in top_users.iterrows():
-                # border=True로 카드 느낌 주기
-                with st.container(border=True):
-                    # 레이아웃: 랭킹 | 유저정보(닉네임,ID) | 활동통계 | 버튼
-                    c1, c2, c3, c4 = st.columns([0.5, 3, 2, 1], vertical_alignment="center")
-                    
-                    # 1. 랭킹
-                    c1.markdown(f"### #{idx+1}")
-                    
-                    # 2. 유저 정보
-                    with c2:
-                        st.markdown(f"**{row['닉네임']}** ({row['유저타입']})")
-                        st.caption(f"ID: {row['ID(IP)']}")
-                    
-                    # 3. 활동 통계
-                    with c3:
-                        st.markdown(f"**총 {row['총활동수']}회**")
-                        st.text(f"글 {row['작성글수']} / 댓 {row['작성댓글수']}")
-                    
-                    # 4. 분석 버튼
-                    with c4:
-                        if st.button("📊 분석", key=f"btn_rank_{idx}", use_container_width=True):
-                            show_user_detail_modal(row['닉네임'], row['ID(IP)'], row['유저타입'], df, selected_date)
+            # [AgGrid 설정]
+            gb = GridOptionsBuilder.from_dataframe(top_users)
+            
+            # 1. 컬럼 설정 (자동 너비, 숫자 포맷 등)
+            gb.configure_default_column(enablePivot=False, enableValue=False, enableRowGroup=False)
+            gb.configure_column("총활동수", type=["numericColumn", "numberColumnFilter"], precision=0)
+            gb.configure_column("작성글수", type=["numericColumn"], precision=0)
+            gb.configure_column("작성댓글수", type=["numericColumn"], precision=0)
+            
+            # 2. 선택 모드 설정 (체크박스 제거, 행 클릭 허용)
+            gb.configure_selection(
+                selection_mode='single', 
+                use_checkbox=False,  # 체크박스 제거
+                pre_selected_rows=[],
+                suppressRowClickSelection=False # 행 클릭 시 선택 활성화
+            )
+            
+            # 3. 페이지네이션 등 기타 옵션
+            gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=20)
+            gridOptions = gb.build()
+
+            # 4. AgGrid 렌더링
+            grid_response = AgGrid(
+                top_users,
+                gridOptions=gridOptions,
+                update_mode=GridUpdateMode.SELECTION_CHANGED, # 클릭 즉시 반응
+                data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+                fit_columns_on_grid_load=True, # 컬럼 너비 자동 맞춤
+                theme='streamlit', # 테마 설정
+                height=600,
+                allow_unsafe_jscode=True
+            )
+
+            # 5. 선택된 데이터 처리
+            selected_rows = grid_response['selected_rows']
+            
+            if selected_rows is not None and len(selected_rows) > 0:
+                # AgGrid 반환 형식에 따라 다를 수 있으므로 안전하게 처리
+                selected_row = selected_rows.iloc[0] if isinstance(selected_rows, pd.DataFrame) else selected_rows[0]
+                
+                # 딕셔너리나 시리즈에서 값 추출
+                nick = selected_row.get('닉네임') if isinstance(selected_row, dict) else selected_row['닉네임']
+                uid = selected_row.get('ID(IP)') if isinstance(selected_row, dict) else selected_row['ID(IP)']
+                account_type = selected_row.get('계정타입') if isinstance(selected_row, dict) else selected_row['계정타입']
+                
+                show_user_detail_modal(nick, uid, account_type, df, selected_date)
 
 
-        # --- [Tab 3] 유저 검색 (리스트 뷰 적용) ---
+        # --- [Tab 3] 전체 유저 일람 ---
         elif selected_tab == "👥 유저 검색":
             st.subheader("🔍 유저 검색 및 전체 목록")
-            
+            st.caption("표의 행을 클릭하면 상세 그래프가 나타납니다.")
+
             user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({
                 '작성글수': 'sum',
                 '작성댓글수': 'sum',
@@ -350,15 +356,13 @@ if not df.empty:
             if target_df.empty:
                 st.info("검색 결과가 없습니다.")
             else:
-                # 페이지네이션
-                items_per_page = 10 # 카드가 커졌으니 페이지당 개수를 15 -> 10으로 조정
+                items_per_page = 15
                 total_items = len(target_df)
                 total_pages = math.ceil(total_items / items_per_page)
 
                 if 'user_page' not in st.session_state: st.session_state.user_page = 1
                 if st.session_state.user_page > total_pages: st.session_state.user_page = 1
 
-                # 페이지네이션 UI
                 if total_pages > 1:
                     c1, c2, c3 = st.columns([8.5, 0.75, 0.75])
                     c1.markdown(f"<div style='padding-top: 5px;'><b>{st.session_state.user_page}</b> / {total_pages} 페이지 (총 {total_items}명)</div>", unsafe_allow_html=True)
@@ -371,29 +375,31 @@ if not df.empty:
                 else:
                     st.write(f"총 {total_items}명")
 
-                # 데이터 슬라이싱
                 current_page = st.session_state.user_page
                 start_idx = (current_page - 1) * items_per_page
                 end_idx = start_idx + items_per_page
-                page_df = target_df.iloc[start_idx:end_idx].reset_index(drop=True)
+                page_df = target_df.iloc[start_idx:end_idx]
                 
-                # [핵심] 검색 결과도 리스트 뷰(카드)로 출력
-                for idx, row in page_df.iterrows():
-                    with st.container(border=True):
-                        c1, c2, c3 = st.columns([3, 2, 1], vertical_alignment="center")
-                        
-                        with c1:
-                            st.markdown(f"**{row['닉네임']}** ({row['유저타입']})")
-                            st.caption(f"ID: {row['ID(IP)']}")
-                        
-                        with c2:
-                            st.text(f"글 {row['작성글수']} / 댓 {row['작성댓글수']}")
-                            st.caption(f"총 활동: {row['총활동수']}")
-                        
-                        with c3:
-                            # 키 값이 겹치지 않게 'search' prefix 추가
-                            if st.button("📊 분석", key=f"btn_search_{idx}", use_container_width=True):
-                                show_user_detail_modal(row['닉네임'], row['ID(IP)'], row['유저타입'], df, selected_date)
+                page_df = page_df.rename(columns={'유저타입': '계정타입'})
+                display_columns = ['닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수']
+
+                # [Tab 3에도 AgGrid 적용 가능하지만, 페이지네이션 로직 유지를 위해 기존 dataframe 유지]
+                # (필요시 여기도 AgGrid로 바꿀 수 있습니다. 현재는 랭킹 탭만 수정했습니다.)
+                event = st.dataframe(
+                    page_df[display_columns],
+                    column_config={
+                        "총활동수": st.column_config.NumberColumn(format="%d회"),
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    on_select="rerun",
+                    selection_mode="single-row"
+                )
+
+                if len(event.selection.rows) > 0:
+                    selected_idx = event.selection.rows[0]
+                    row = page_df.iloc[selected_idx]
+                    show_user_detail_modal(row['닉네임'], row['ID(IP)'], row['계정타입'], df, selected_date)
 
 else:
     st.info("데이터 로딩 중... (데이터가 없거나 R2 연결을 확인해주세요)")

@@ -102,7 +102,7 @@ def load_data_from_r2():
     final_df['총활동수'] = final_df['작성글수'] + final_df['작성댓글수']
     return final_df
 
-# --- [수정됨] 차트 함수: 포맷 변경 및 호버 센서 추가 ---
+# --- [수정됨] 차트 함수: 툴팁 위치 수정 (selectors에 추가) ---
 def create_fixed_chart(chart_data, title_prefix=""):
     # 1. 툴팁용 데이터 (Pivot)
     base_df = chart_data.pivot(index='수집시간', columns='활동유형', values='카운트').reset_index()
@@ -113,8 +113,16 @@ def create_fixed_chart(chart_data, title_prefix=""):
             base_df[col] = 0
     base_df = base_df.fillna(0)
 
-    # [수정 1] 공통 X축 설정 (분 단위 생략: %H시)
+    # 공통 X축 설정 (분 단위 생략: %H시)
     x_axis = alt.X('수집시간', axis=alt.Axis(title='시간', format='%H시'))
+
+    # 툴팁 구성 정의 (재사용을 위해 변수로 분리)
+    tooltip_config = [
+        alt.Tooltip('수집시간', title='🕒 시간', format='%H시'),
+        alt.Tooltip('액티브수', title='👥 액티브', format=','),
+        alt.Tooltip('작성글수', title='📝 작성글', format=','),
+        alt.Tooltip('작성댓글수', title='💬 작성댓글', format=',')
+    ]
 
     # 2. 메인 라인 차트
     lines = alt.Chart(chart_data).mark_line(point=True).encode(
@@ -127,30 +135,24 @@ def create_fixed_chart(chart_data, title_prefix=""):
     # 3. 마우스 호버 감지 설정
     nearest = alt.selection_point(nearest=True, on='mouseover', fields=['수집시간'], empty=False)
 
-    # [수정 2] 투명 센서 레이어 추가 (마우스 감지용)
-    # 이것이 있어야 마우스가 근처에만 가도 툴팁이 반응합니다.
+    # [핵심 수정] 투명 센서 레이어에 tooltip 추가
+    # 이제 빈 공간(투명 센서)을 건드려도 툴팁 정보가 다 나옵니다.
     selectors = alt.Chart(base_df).mark_point().encode(
         x=x_axis,
-        opacity=alt.value(0), # 투명하게 설정
+        opacity=alt.value(0), 
+        tooltip=tooltip_config # <--- 여기에 툴팁 추가!
     ).add_params(
         nearest
     )
 
-    # 4. 회색 세로선(Rule) + 통합 툴팁
+    # 4. 회색 세로선(Rule)
     rules = alt.Chart(base_df).mark_rule(color='gray').encode(
         x=x_axis,
         opacity=alt.condition(nearest, alt.value(0.5), alt.value(0)),
-        tooltip=[
-            # [수정 1] 툴팁 포맷도 %H시로 변경
-            alt.Tooltip('수집시간', title='🕒 시간', format='%H시'),
-            alt.Tooltip('액티브수', title='👥 액티브', format=','),
-            alt.Tooltip('작성글수', title='📝 작성글', format=','),
-            alt.Tooltip('작성댓글수', title='💬 작성댓글', format=',')
-        ]
+        tooltip=tooltip_config # 여기도 유지 (안전장치)
     )
 
-    # 5. 차트 결합 (라인 + 센서 + 룰)
-    # 순서: 라인 -> 센서(맨 위) -> 룰
+    # 5. 차트 결합
     final_chart = (lines + selectors + rules).properties(
         height=400,
         title=f"{title_prefix} 상세 활동 추이"
@@ -259,7 +261,7 @@ if not df.empty:
                 min_value=time_filter_start,
                 max_value=time_filter_end,
                 value=(time_filter_start, time_filter_end), 
-                format="HH시", # 슬라이더 포맷도 심플하게 변경
+                format="HH시", 
                 step=timedelta(minutes=30)
             )
 

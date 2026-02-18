@@ -9,8 +9,8 @@ import concurrent.futures
 from botocore.config import Config
 from datetime import datetime, time, timedelta
 
-# [추가됨] AgGrid 라이브러리 임포트
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
+# [AgGrid 관련 임포트]
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode, JsCode
 
 # --- 페이지 기본 설정 ---
 st.set_page_config(page_title="ProjectMX Dashboard", layout="wide")
@@ -51,7 +51,6 @@ with st_header_col:
 
 # --- Cloudflare R2 데이터 로드 ---
 @st.cache_data(ttl=300, show_spinner=False)
-@st.cache_data(ttl=300, show_spinner=False)
 def load_data_from_r2():
     try:
         aws_access_key_id = st.secrets["CF_ACCESS_KEY_ID"]
@@ -79,27 +78,21 @@ def load_data_from_r2():
     if 'Contents' not in response:
         return pd.DataFrame()
 
-    # [최적화 1] 전체 파일 목록 가져오기
     all_files = [f for f in response['Contents'] if f['Key'].endswith('.xlsx')]
     
     if not all_files:
         return pd.DataFrame()
 
-    # [최적화 2] 파일명에서 날짜를 분석하여 '최근 14일' 데이터만 필터링
     target_files = []
-    cutoff_date = datetime.now() - timedelta(days=14) # 14일 전 날짜 기준
+    cutoff_date = datetime.now() - timedelta(days=14)
 
     for f in all_files:
         try:
-            # 파일명 앞부분(날짜)만 추출 ("2026-02-13")
             date_part = f['Key'].split('_')[0]
             file_date = datetime.strptime(date_part, "%Y-%m-%d")
-            
-            # 기준일 이후의 파일만 다운로드 리스트에 추가
             if file_date >= cutoff_date:
                 target_files.append(f)
         except:
-            # 날짜 파싱 에러나면 일단 포함시키거나 무시 (여기선 안전하게 포함)
             target_files.append(f)
 
     if not target_files:
@@ -114,7 +107,6 @@ def load_data_from_r2():
         except Exception:
             return None
 
-    # [최적화 3] 필터링된 파일들에 대해서만 병렬 다운로드 수행 (여전히 존재함!)
     with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
         results = list(executor.map(fetch_and_parse, target_files))
     
@@ -129,7 +121,7 @@ def load_data_from_r2():
     final_df['총활동수'] = final_df['작성글수'] + final_df['작성댓글수']
     return final_df
 
-# --- [수정됨] 차트 함수 ---
+# --- 차트 함수 ---
 def create_fixed_chart(chart_data, title_prefix=""):
     base_df = chart_data.pivot(index='수집시간', columns='활동유형', values='카운트').reset_index()
     base_df.columns.name = None 
@@ -290,33 +282,55 @@ if not df.empty:
                 chart = create_fixed_chart(chart_data)
                 st.altair_chart(chart, use_container_width=True, key=f"main_chart_{selected_date}")
 
-        # --- [Tab 2] 유저 랭킹 (AgGrid 적용) ---
+        # --- [Tab 2] 유저 랭킹 (아이콘 클릭 방식) ---
         elif selected_tab == "🏆 유저 랭킹":
             st.subheader("🔥 Top 20")
-            st.caption("표의 행을 클릭하면 상세 그래프가 나타납니다.")
+            st.caption("아래 표에서 **📈 아이콘**을 클릭하면 상세 그래프를 볼 수 있습니다.")
 
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
             top_users = top_users.rename(columns={'유저타입': '계정타입'})
             
+            # [핵심] 상세보기용 더미 컬럼 추가 (맨 앞에 배치)
+            top_users.insert(0, '상세보기', '📈') 
+
             # [AgGrid 설정]
             gb = GridOptionsBuilder.from_dataframe(top_users)
             
-            # 1. 컬럼 설정 (자동 너비, 숫자 포맷 등)
+            # 1. 컬럼 설정
             gb.configure_default_column(enablePivot=False, enableValue=False, enableRowGroup=False)
             gb.configure_column("총활동수", type=["numericColumn", "numberColumnFilter"], precision=0)
             gb.configure_column("작성글수", type=["numericColumn"], precision=0)
             gb.configure_column("작성댓글수", type=["numericColumn"], precision=0)
+
+            # 2. 상세보기 아이콘 컬럼 설정 (JsCode 적용)
+            # 클릭 시 다른 선택을 모두 해제하고(deselectAll), 현재 행만 선택(setSelected)합니다.
+            btn_js = JsCode("""
+            class BtnCellRenderer {
+                init(params) {
+                    this.eGui = document.createElement('div');
+                    this.eGui.innerHTML = '<span style="cursor: pointer; font-size: 1.5em;" title="클릭하여 그래프 보기">📈</span>';
+                    this.eGui.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        const api = params.api;
+                        api.deselectAll();
+                        params.node.setSelected(true);
+                    });
+                }
+                getGui() { return this.eGui; }
+            }
+            """)
+            gb.configure_column("상세보기", cellRenderer=btn_js, width=80, suppressMenu=True, sortable=False)
             
-            # 2. 선택 모드 설정 (체크박스 제거, 행 클릭 허용)
+            # 3. 선택 모드 설정 (중요: suppressRowClickSelection=True)
+            # 이것이 있어야 빈 공간이나 헤더를 눌렀을 때 선택되는 버그가 사라집니다.
             gb.configure_selection(
                 selection_mode='single', 
-                use_checkbox=False,  # 체크박스 제거
-                pre_selected_rows=[],
-                suppressRowClickSelection=False # 행 클릭 시 선택 활성화
+                use_checkbox=False,
+                suppressRowClickSelection=True, # [핵심] 오직 아이콘 클릭으로만 선택됨
+                pre_selected_rows=[]
             )
             
-            # 3. 페이지네이션 등 기타 옵션
             gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=20)
             gridOptions = gb.build()
 
@@ -324,22 +338,19 @@ if not df.empty:
             grid_response = AgGrid(
                 top_users,
                 gridOptions=gridOptions,
-                update_mode=GridUpdateMode.SELECTION_CHANGED, # 클릭 즉시 반응
+                update_mode=GridUpdateMode.SELECTION_CHANGED, # 선택 변경 시에만 업데이트
                 data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-                fit_columns_on_grid_load=True, # 컬럼 너비 자동 맞춤
-                theme='streamlit', # 테마 설정
+                fit_columns_on_grid_load=True, 
+                theme='streamlit',
                 height=600,
-                allow_unsafe_jscode=True
+                allow_unsafe_jscode=True # JS 허용
             )
 
-            # 5. 선택된 데이터 처리
             selected_rows = grid_response['selected_rows']
             
             if selected_rows is not None and len(selected_rows) > 0:
-                # AgGrid 반환 형식에 따라 다를 수 있으므로 안전하게 처리
                 selected_row = selected_rows.iloc[0] if isinstance(selected_rows, pd.DataFrame) else selected_rows[0]
                 
-                # 딕셔너리나 시리즈에서 값 추출
                 nick = selected_row.get('닉네임') if isinstance(selected_row, dict) else selected_row['닉네임']
                 uid = selected_row.get('ID(IP)') if isinstance(selected_row, dict) else selected_row['ID(IP)']
                 account_type = selected_row.get('계정타입') if isinstance(selected_row, dict) else selected_row['계정타입']
@@ -407,8 +418,6 @@ if not df.empty:
                 page_df = page_df.rename(columns={'유저타입': '계정타입'})
                 display_columns = ['닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수']
 
-                # [Tab 3에도 AgGrid 적용 가능하지만, 페이지네이션 로직 유지를 위해 기존 dataframe 유지]
-                # (필요시 여기도 AgGrid로 바꿀 수 있습니다. 현재는 랭킹 탭만 수정했습니다.)
                 event = st.dataframe(
                     page_df[display_columns],
                     column_config={

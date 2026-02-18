@@ -9,7 +9,7 @@ import concurrent.futures
 from botocore.config import Config
 from datetime import datetime, time, timedelta
 
-# [AgGrid 관련 임포트]
+# [수정됨] JsCode 추가 임포트
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode, JsCode
 
 # --- 페이지 기본 설정 ---
@@ -78,24 +78,8 @@ def load_data_from_r2():
     if 'Contents' not in response:
         return pd.DataFrame()
 
-    all_files = [f for f in response['Contents'] if f['Key'].endswith('.xlsx')]
-    
-    if not all_files:
-        return pd.DataFrame()
-
-    target_files = []
-    cutoff_date = datetime.now() - timedelta(days=14)
-
-    for f in all_files:
-        try:
-            date_part = f['Key'].split('_')[0]
-            file_date = datetime.strptime(date_part, "%Y-%m-%d")
-            if file_date >= cutoff_date:
-                target_files.append(f)
-        except:
-            target_files.append(f)
-
-    if not target_files:
+    files = [f for f in response['Contents'] if f['Key'].endswith('.xlsx')]
+    if not files:
         return pd.DataFrame()
 
     def fetch_and_parse(file_info):
@@ -108,7 +92,7 @@ def load_data_from_r2():
             return None
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-        results = list(executor.map(fetch_and_parse, target_files))
+        results = list(executor.map(fetch_and_parse, files))
     
     all_dfs = [df for df in results if df is not None]
     
@@ -282,68 +266,51 @@ if not df.empty:
                 chart = create_fixed_chart(chart_data)
                 st.altair_chart(chart, use_container_width=True, key=f"main_chart_{selected_date}")
 
-        # --- [Tab 2] 유저 랭킹 (아이콘 클릭 방식) ---
+        # --- [Tab 2] 유저 랭킹 ---
         elif selected_tab == "🏆 유저 랭킹":
             st.subheader("🔥 Top 20")
-            st.caption("아래 표에서 **📈 아이콘**을 클릭하면 상세 그래프를 볼 수 있습니다.")
+            st.caption("표의 행을 클릭하면 상세 그래프가 나타납니다.")
 
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
             top_users = top_users.rename(columns={'유저타입': '계정타입'})
             
-            # [핵심] 상세보기용 더미 컬럼 추가 (맨 앞에 배치)
-            top_users.insert(0, '상세보기', '📈') 
-
             # [AgGrid 설정]
             gb = GridOptionsBuilder.from_dataframe(top_users)
             
-            # 1. 컬럼 설정
             gb.configure_default_column(enablePivot=False, enableValue=False, enableRowGroup=False)
             gb.configure_column("총활동수", type=["numericColumn", "numberColumnFilter"], precision=0)
             gb.configure_column("작성글수", type=["numericColumn"], precision=0)
             gb.configure_column("작성댓글수", type=["numericColumn"], precision=0)
-
-            # 2. 상세보기 아이콘 컬럼 설정 (JsCode 적용)
-            # 클릭 시 다른 선택을 모두 해제하고(deselectAll), 현재 행만 선택(setSelected)합니다.
-            btn_js = JsCode("""
-            class BtnCellRenderer {
-                init(params) {
-                    this.eGui = document.createElement('div');
-                    this.eGui.innerHTML = '<span style="cursor: pointer; font-size: 1.5em;" title="클릭하여 그래프 보기">📈</span>';
-                    this.eGui.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        const api = params.api;
-                        api.deselectAll();
-                        params.node.setSelected(true);
-                    });
-                }
-                getGui() { return this.eGui; }
-            }
-            """)
-            gb.configure_column("상세보기", cellRenderer=btn_js, width=80, suppressMenu=True, sortable=False)
             
-            # 3. 선택 모드 설정 (중요: suppressRowClickSelection=True)
-            # 이것이 있어야 빈 공간이나 헤더를 눌렀을 때 선택되는 버그가 사라집니다.
             gb.configure_selection(
                 selection_mode='single', 
-                use_checkbox=False,
-                suppressRowClickSelection=True, # [핵심] 오직 아이콘 클릭으로만 선택됨
-                pre_selected_rows=[]
+                use_checkbox=False, 
+                pre_selected_rows=[],
+                suppressRowClickSelection=False
             )
             
             gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=20)
+            
+            # [핵심] 정렬(Sort) 시 선택을 강제 해제하는 JS 코드 주입
+            # 이렇게 하면 정렬할 때 선택된 행이 없어져서 모달이 뜨지 않습니다.
+            gb.configure_grid_options(onSortChanged=JsCode("""
+                function(e) {
+                    e.api.deselectAll();
+                }
+            """))
+
             gridOptions = gb.build()
 
-            # 4. AgGrid 렌더링
             grid_response = AgGrid(
                 top_users,
                 gridOptions=gridOptions,
-                update_mode=GridUpdateMode.SELECTION_CHANGED, # 선택 변경 시에만 업데이트
+                update_mode=GridUpdateMode.SELECTION_CHANGED, 
                 data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
                 fit_columns_on_grid_load=True, 
-                theme='streamlit',
+                theme='streamlit', 
                 height=600,
-                allow_unsafe_jscode=True # JS 허용
+                allow_unsafe_jscode=True # JS 코드 실행 허용
             )
 
             selected_rows = grid_response['selected_rows']

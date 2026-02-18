@@ -51,6 +51,7 @@ with st_header_col:
 
 # --- Cloudflare R2 데이터 로드 ---
 @st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def load_data_from_r2():
     try:
         aws_access_key_id = st.secrets["CF_ACCESS_KEY_ID"]
@@ -78,8 +79,30 @@ def load_data_from_r2():
     if 'Contents' not in response:
         return pd.DataFrame()
 
-    files = [f for f in response['Contents'] if f['Key'].endswith('.xlsx')]
-    if not files:
+    # [최적화 1] 전체 파일 목록 가져오기
+    all_files = [f for f in response['Contents'] if f['Key'].endswith('.xlsx')]
+    
+    if not all_files:
+        return pd.DataFrame()
+
+    # [최적화 2] 파일명에서 날짜를 분석하여 '최근 14일' 데이터만 필터링
+    target_files = []
+    cutoff_date = datetime.now() - timedelta(days=14) # 14일 전 날짜 기준
+
+    for f in all_files:
+        try:
+            # 파일명 앞부분(날짜)만 추출 ("2026-02-13")
+            date_part = f['Key'].split('_')[0]
+            file_date = datetime.strptime(date_part, "%Y-%m-%d")
+            
+            # 기준일 이후의 파일만 다운로드 리스트에 추가
+            if file_date >= cutoff_date:
+                target_files.append(f)
+        except:
+            # 날짜 파싱 에러나면 일단 포함시키거나 무시 (여기선 안전하게 포함)
+            target_files.append(f)
+
+    if not target_files:
         return pd.DataFrame()
 
     def fetch_and_parse(file_info):
@@ -91,8 +114,9 @@ def load_data_from_r2():
         except Exception:
             return None
 
+    # [최적화 3] 필터링된 파일들에 대해서만 병렬 다운로드 수행 (여전히 존재함!)
     with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-        results = list(executor.map(fetch_and_parse, files))
+        results = list(executor.map(fetch_and_parse, target_files))
     
     all_dfs = [df for df in results if df is not None]
     

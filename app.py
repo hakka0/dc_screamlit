@@ -9,7 +9,7 @@ import concurrent.futures
 from botocore.config import Config
 from datetime import datetime, time, timedelta
 
-# JsCode 추가 임포트 (AgGrid 정렬 시 클릭 해제용)
+# JsCode 추가 임포트
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode, JsCode
 
 # --- 페이지 기본 설정 ---
@@ -82,7 +82,6 @@ def load_data_from_r2():
     if not all_files:
         return pd.DataFrame()
 
-    # 최근 14일치 데이터만 로드하여 속도 최적화
     target_files = []
     cutoff_date = datetime.now() - timedelta(days=14)
 
@@ -170,7 +169,6 @@ def create_fixed_chart(chart_data, title_prefix=""):
 
     return final_chart
 
-
 # --- 유저 상세 정보 모달 ---
 @st.dialog("👤 유저 상세 활동 분석")
 def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
@@ -237,6 +235,17 @@ if not df.empty:
     
     st.markdown(" ") 
 
+    # [핵심] 자동 선택 해제 JS 함수 (0.5초 뒤에 표의 선택을 풂)
+    auto_deselect_js = JsCode("""
+        function(e) {
+            if (e.node.isSelected()) {
+                setTimeout(function() {
+                    e.api.deselectAll();
+                }, 500);
+            }
+        }
+    """)
+
     if filtered_df.empty:
         st.warning(f"⚠️ {selected_date} 해당 시간대에 데이터가 없습니다.")
     else:
@@ -260,11 +269,19 @@ if not df.empty:
             
             daily_data = full_trend_df[full_trend_df['수집시간'].dt.date == selected_date]
 
-            # [수정] 중복되던 하단 스크롤바(슬라이더) 제거.
-            # 상단 메인 "시간대 필터" 값을 그대로 그래프 출력 범위로 직접 사용합니다.
+            zoom_range = st.slider(
+                "🔎 구간 확대 및 이동 (아래 바를 움직여 그래프를 조절하세요)",
+                min_value=time_filter_start,
+                max_value=time_filter_end,
+                value=(time_filter_start, time_filter_end), 
+                format="HH시", 
+                step=timedelta(minutes=30)
+            )
+
+            view_start, view_end = zoom_range
             visible_data = daily_data[
-                (daily_data['수집시간'] >= time_filter_start) & 
-                (daily_data['수집시간'] <= time_filter_end)
+                (daily_data['수집시간'] >= view_start) & 
+                (daily_data['수집시간'] <= view_end)
             ]
 
             if visible_data.empty:
@@ -272,15 +289,12 @@ if not df.empty:
             else:
                 chart_data = visible_data.melt('수집시간', var_name='활동유형', value_name='카운트')
                 chart = create_fixed_chart(chart_data)
-                
-                # key에 시간 값을 추가해 필터가 변경될 때마다 확실하게 새로 그리도록 조치
-                st.altair_chart(chart, use_container_width=True, key=f"main_chart_{selected_date}_{start_hour}_{end_hour}")
-
+                st.altair_chart(chart, use_container_width=True, key=f"main_chart_{selected_date}")
 
         # --- [Tab 2] 유저 랭킹 ---
         elif selected_tab == "🏆 유저 랭킹":
             st.subheader("🔥 Top 20")
-            st.caption("👇 궁금한 유저의 행을 클릭하면 상세 활동 그래프가 뜹니다.")
+            st.caption("👇 궁금한 유저의 행을 클릭하면 상세 활동 그래프가 뜹니다. (같은 사람을 다시 눌러도 뜹니다!)")
 
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
@@ -300,11 +314,9 @@ if not df.empty:
             )
             
             gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=20)
-            gb.configure_grid_options(onSortChanged=JsCode("""
-                function(e) {
-                    e.api.deselectAll();
-                }
-            """))
+            
+            # [수정] 정렬 이벤트 대신, '행 선택 이벤트' 시점에 자동 해제 실행
+            gb.configure_grid_options(onRowSelected=auto_deselect_js)
 
             gridOptions = gb.build()
 
@@ -332,7 +344,7 @@ if not df.empty:
                 show_user_detail_modal(nick, uid, account_type, df, selected_date)
 
 
-        # --- [Tab 3] 유저 검색 (AgGrid 적용) ---
+        # --- [Tab 3] 유저 검색 ---
         elif selected_tab == "👥 유저 검색":
             st.subheader("🔍 유저 검색 및 전체 목록")
             st.caption("👇 궁금한 유저의 행을 클릭하면 상세 활동 그래프가 뜹니다.")
@@ -346,7 +358,6 @@ if not df.empty:
 
             col_search_type, col_search_input = st.columns([1.2, 4])
             
-            # 검색창이 바뀌면 렌더링 초기화
             def clear_search_box():
                 if 'user_search_box' in st.session_state:
                     st.session_state.user_search_box = None
@@ -370,7 +381,6 @@ if not df.empty:
                 display_columns = ['닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수']
                 page_df = page_df[display_columns]
 
-                # [수정] 복잡한 수동 페이지네이션 삭제 후, AgGrid 적용
                 gb = GridOptionsBuilder.from_dataframe(page_df)
                 gb.configure_default_column(enablePivot=False, enableValue=False, enableRowGroup=False)
                 gb.configure_column("총활동수", type=["numericColumn", "numberColumnFilter"], precision=0)
@@ -384,15 +394,10 @@ if not df.empty:
                     suppressRowClickSelection=False
                 )
                 
-                # AgGrid 내장 페이지네이션 사용 (한 페이지당 15개)
                 gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=15)
                 
-                # 정렬 시 선택 강제 해제 (버그 방지)
-                gb.configure_grid_options(onSortChanged=JsCode("""
-                    function(e) {
-                        e.api.deselectAll();
-                    }
-                """))
+                # [수정] 여기도 동일한 자동 해제 기능 적용
+                gb.configure_grid_options(onRowSelected=auto_deselect_js)
 
                 gridOptions = gb.build()
 
@@ -405,7 +410,7 @@ if not df.empty:
                     theme='streamlit', 
                     height=600,
                     allow_unsafe_jscode=True,
-                    key="search_grid" # 랭킹 탭과 겹치지 않도록 고유 키 부여
+                    key="search_grid" 
                 )
 
                 selected_rows = grid_response['selected_rows']

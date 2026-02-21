@@ -9,7 +9,7 @@ import concurrent.futures
 from botocore.config import Config
 from datetime import datetime, time, timedelta
 
-# [수정됨] JsCode 추가 임포트
+# JsCode 추가 임포트 (AgGrid 정렬 시 클릭 해제용)
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode, JsCode
 
 # --- 페이지 기본 설정 ---
@@ -78,8 +78,24 @@ def load_data_from_r2():
     if 'Contents' not in response:
         return pd.DataFrame()
 
-    files = [f for f in response['Contents'] if f['Key'].endswith('.xlsx')]
-    if not files:
+    all_files = [f for f in response['Contents'] if f['Key'].endswith('.xlsx')]
+    if not all_files:
+        return pd.DataFrame()
+
+    # 최근 14일치 데이터만 로드하여 속도 최적화
+    target_files = []
+    cutoff_date = datetime.now() - timedelta(days=14)
+
+    for f in all_files:
+        try:
+            date_part = f['Key'].split('_')[0]
+            file_date = datetime.strptime(date_part, "%Y-%m-%d")
+            if file_date >= cutoff_date:
+                target_files.append(f)
+        except:
+            target_files.append(f)
+
+    if not target_files:
         return pd.DataFrame()
 
     def fetch_and_parse(file_info):
@@ -92,7 +108,7 @@ def load_data_from_r2():
             return None
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-        results = list(executor.map(fetch_and_parse, files))
+        results = list(executor.map(fetch_and_parse, target_files))
     
     all_dfs = [df for df in results if df is not None]
     
@@ -244,19 +260,11 @@ if not df.empty:
             
             daily_data = full_trend_df[full_trend_df['수집시간'].dt.date == selected_date]
 
-            zoom_range = st.slider(
-                "🔎 구간 확대 및 이동 (아래 바를 움직여 그래프를 조절하세요)",
-                min_value=time_filter_start,
-                max_value=time_filter_end,
-                value=(time_filter_start, time_filter_end), 
-                format="HH시", 
-                step=timedelta(minutes=30)
-            )
-
-            view_start, view_end = zoom_range
+            # [수정] 중복되던 하단 스크롤바(슬라이더) 제거.
+            # 상단 메인 "시간대 필터" 값을 그대로 그래프 출력 범위로 직접 사용합니다.
             visible_data = daily_data[
-                (daily_data['수집시간'] >= view_start) & 
-                (daily_data['수집시간'] <= view_end)
+                (daily_data['수집시간'] >= time_filter_start) & 
+                (daily_data['수집시간'] <= time_filter_end)
             ]
 
             if visible_data.empty:
@@ -264,20 +272,21 @@ if not df.empty:
             else:
                 chart_data = visible_data.melt('수집시간', var_name='활동유형', value_name='카운트')
                 chart = create_fixed_chart(chart_data)
-                st.altair_chart(chart, use_container_width=True, key=f"main_chart_{selected_date}")
+                
+                # key에 시간 값을 추가해 필터가 변경될 때마다 확실하게 새로 그리도록 조치
+                st.altair_chart(chart, use_container_width=True, key=f"main_chart_{selected_date}_{start_hour}_{end_hour}")
+
 
         # --- [Tab 2] 유저 랭킹 ---
         elif selected_tab == "🏆 유저 랭킹":
             st.subheader("🔥 Top 20")
-            st.caption("표의 행을 클릭하면 상세 그래프가 나타납니다.")
+            st.caption("👇 궁금한 유저의 행을 클릭하면 상세 활동 그래프가 뜹니다.")
 
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
             top_users = top_users.rename(columns={'유저타입': '계정타입'})
             
-            # [AgGrid 설정]
             gb = GridOptionsBuilder.from_dataframe(top_users)
-            
             gb.configure_default_column(enablePivot=False, enableValue=False, enableRowGroup=False)
             gb.configure_column("총활동수", type=["numericColumn", "numberColumnFilter"], precision=0)
             gb.configure_column("작성글수", type=["numericColumn"], precision=0)
@@ -291,9 +300,6 @@ if not df.empty:
             )
             
             gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=20)
-            
-            # [핵심] 정렬(Sort) 시 선택을 강제 해제하는 JS 코드 주입
-            # 이렇게 하면 정렬할 때 선택된 행이 없어져서 모달이 뜨지 않습니다.
             gb.configure_grid_options(onSortChanged=JsCode("""
                 function(e) {
                     e.api.deselectAll();
@@ -310,7 +316,8 @@ if not df.empty:
                 fit_columns_on_grid_load=True, 
                 theme='streamlit', 
                 height=600,
-                allow_unsafe_jscode=True # JS 코드 실행 허용
+                allow_unsafe_jscode=True,
+                key="ranking_grid"
             )
 
             selected_rows = grid_response['selected_rows']
@@ -325,10 +332,10 @@ if not df.empty:
                 show_user_detail_modal(nick, uid, account_type, df, selected_date)
 
 
-        # --- [Tab 3] 전체 유저 일람 ---
+        # --- [Tab 3] 유저 검색 (AgGrid 적용) ---
         elif selected_tab == "👥 유저 검색":
             st.subheader("🔍 유저 검색 및 전체 목록")
-            st.caption("표의 행을 클릭하면 상세 그래프가 나타납니다.")
+            st.caption("👇 궁금한 유저의 행을 클릭하면 상세 활동 그래프가 뜹니다.")
 
             user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({
                 '작성글수': 'sum',
@@ -339,6 +346,7 @@ if not df.empty:
 
             col_search_type, col_search_input = st.columns([1.2, 4])
             
+            # 검색창이 바뀌면 렌더링 초기화
             def clear_search_box():
                 if 'user_search_box' in st.session_state:
                     st.session_state.user_search_box = None
@@ -358,48 +366,58 @@ if not df.empty:
             if target_df.empty:
                 st.info("검색 결과가 없습니다.")
             else:
-                items_per_page = 15
-                total_items = len(target_df)
-                total_pages = math.ceil(total_items / items_per_page)
-
-                if 'user_page' not in st.session_state: st.session_state.user_page = 1
-                if st.session_state.user_page > total_pages: st.session_state.user_page = 1
-
-                if total_pages > 1:
-                    c1, c2, c3 = st.columns([8.5, 0.75, 0.75])
-                    c1.markdown(f"<div style='padding-top: 5px;'><b>{st.session_state.user_page}</b> / {total_pages} 페이지 (총 {total_items}명)</div>", unsafe_allow_html=True)
-                    if c2.button("◀", use_container_width=True) and st.session_state.user_page > 1:
-                        st.session_state.user_page -= 1
-                        st.rerun()
-                    if c3.button("▶", use_container_width=True) and st.session_state.user_page < total_pages:
-                        st.session_state.user_page += 1
-                        st.rerun()
-                else:
-                    st.write(f"총 {total_items}명")
-
-                current_page = st.session_state.user_page
-                start_idx = (current_page - 1) * items_per_page
-                end_idx = start_idx + items_per_page
-                page_df = target_df.iloc[start_idx:end_idx]
-                
-                page_df = page_df.rename(columns={'유저타입': '계정타입'})
+                page_df = target_df.rename(columns={'유저타입': '계정타입'})
                 display_columns = ['닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수']
+                page_df = page_df[display_columns]
 
-                event = st.dataframe(
-                    page_df[display_columns],
-                    column_config={
-                        "총활동수": st.column_config.NumberColumn(format="%d회"),
-                    },
-                    hide_index=True,
-                    use_container_width=True,
-                    on_select="rerun",
-                    selection_mode="single-row"
+                # [수정] 복잡한 수동 페이지네이션 삭제 후, AgGrid 적용
+                gb = GridOptionsBuilder.from_dataframe(page_df)
+                gb.configure_default_column(enablePivot=False, enableValue=False, enableRowGroup=False)
+                gb.configure_column("총활동수", type=["numericColumn", "numberColumnFilter"], precision=0)
+                gb.configure_column("작성글수", type=["numericColumn"], precision=0)
+                gb.configure_column("작성댓글수", type=["numericColumn"], precision=0)
+                
+                gb.configure_selection(
+                    selection_mode='single', 
+                    use_checkbox=False, 
+                    pre_selected_rows=[],
+                    suppressRowClickSelection=False
+                )
+                
+                # AgGrid 내장 페이지네이션 사용 (한 페이지당 15개)
+                gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=15)
+                
+                # 정렬 시 선택 강제 해제 (버그 방지)
+                gb.configure_grid_options(onSortChanged=JsCode("""
+                    function(e) {
+                        e.api.deselectAll();
+                    }
+                """))
+
+                gridOptions = gb.build()
+
+                grid_response = AgGrid(
+                    page_df,
+                    gridOptions=gridOptions,
+                    update_mode=GridUpdateMode.SELECTION_CHANGED, 
+                    data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+                    fit_columns_on_grid_load=True, 
+                    theme='streamlit', 
+                    height=600,
+                    allow_unsafe_jscode=True,
+                    key="search_grid" # 랭킹 탭과 겹치지 않도록 고유 키 부여
                 )
 
-                if len(event.selection.rows) > 0:
-                    selected_idx = event.selection.rows[0]
-                    row = page_df.iloc[selected_idx]
-                    show_user_detail_modal(row['닉네임'], row['ID(IP)'], row['계정타입'], df, selected_date)
+                selected_rows = grid_response['selected_rows']
+                
+                if selected_rows is not None and len(selected_rows) > 0:
+                    selected_row = selected_rows.iloc[0] if isinstance(selected_rows, pd.DataFrame) else selected_rows[0]
+                    
+                    nick = selected_row.get('닉네임') if isinstance(selected_row, dict) else selected_row['닉네임']
+                    uid = selected_row.get('ID(IP)') if isinstance(selected_row, dict) else selected_row['ID(IP)']
+                    account_type = selected_row.get('계정타입') if isinstance(selected_row, dict) else selected_row['계정타입']
+                    
+                    show_user_detail_modal(nick, uid, account_type, df, selected_date)
 
 else:
     st.info("데이터 로딩 중... (데이터가 없거나 R2 연결을 확인해주세요)")

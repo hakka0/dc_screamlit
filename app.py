@@ -275,7 +275,7 @@ if not df.empty:
         # --- [Tab 2] 유저 랭킹 ---
         elif selected_tab == "🏆 유저 랭킹":
             st.subheader("🔥 Top 20")
-            st.caption("👇 궁금한 유저의 행을 클릭하면 상세 활동 그래프가 뜹니다.")
+            st.caption("👇 이미 선택된(색칠된) 행을 다시 보려면, 행을 한 번 더 눌러 선택을 푼 뒤 다시 클릭하세요.")
 
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
@@ -296,16 +296,14 @@ if not df.empty:
             
             gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=20)
             
-            # [핵심 수정] 정렬 시 선택 해제 + 클릭 후 0.5초 뒤 자동 선택 해제
+            # [핵심 수정] 0.5초 강제 리셋을 없애고, 토글 기능 활성화
             gb.configure_grid_options(
+                rowMultiSelectWithClick=True, # 클릭하면 선택, 다시 클릭하면 해제됨
+                suppressRowDeselection=False,
                 onSortChanged=JsCode("""
                     function(e) { e.api.deselectAll(); }
-                """),
-                onCellClicked=JsCode("""
-                    function(e) {
-                        setTimeout(function() { e.api.deselectAll(); }, 500);
-                    }
                 """)
+                # onCellClicked 삭제됨 (창이 멋대로 꺼지는 원인)
             )
 
             gridOptions = gb.build()
@@ -337,7 +335,7 @@ if not df.empty:
         # --- [Tab 3] 유저 검색 ---
         elif selected_tab == "👥 유저 검색":
             st.subheader("🔍 유저 검색 및 전체 목록")
-            st.caption("👇 궁금한 유저의 행을 클릭하면 상세 활동 그래프가 뜹니다.")
+            st.caption("👇 이미 선택된(색칠된) 행을 다시 보려면, 행을 한 번 더 눌러 선택을 푼 뒤 다시 클릭하세요.")
 
             user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({
                 '작성글수': 'sum',
@@ -386,15 +384,12 @@ if not df.empty:
                 
                 gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=15)
                 
-                # [핵심 수정] 정렬 시 선택 해제 + 클릭 후 0.5초 뒤 자동 선택 해제
+                # [핵심 수정] 0.5초 리셋 삭제, 토글 기능 활성화
                 gb.configure_grid_options(
+                    rowMultiSelectWithClick=True,
+                    suppressRowDeselection=False,
                     onSortChanged=JsCode("""
                         function(e) { e.api.deselectAll(); }
-                    """),
-                    onCellClicked=JsCode("""
-                        function(e) {
-                            setTimeout(function() { e.api.deselectAll(); }, 500);
-                        }
                     """)
                 )
 

@@ -169,6 +169,7 @@ def create_fixed_chart(chart_data, title_prefix=""):
 
     return final_chart
 
+
 # --- 유저 상세 정보 모달 ---
 @st.dialog("👤 유저 상세 활동 분석")
 def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
@@ -235,17 +236,6 @@ if not df.empty:
     
     st.markdown(" ") 
 
-    # [핵심] 자동 선택 해제 JS 함수 (0.5초 뒤에 표의 선택을 풂)
-    auto_deselect_js = JsCode("""
-        function(e) {
-            if (e.node.isSelected()) {
-                setTimeout(function() {
-                    e.api.deselectAll();
-                }, 500);
-            }
-        }
-    """)
-
     if filtered_df.empty:
         st.warning(f"⚠️ {selected_date} 해당 시간대에 데이터가 없습니다.")
     else:
@@ -269,19 +259,9 @@ if not df.empty:
             
             daily_data = full_trend_df[full_trend_df['수집시간'].dt.date == selected_date]
 
-            zoom_range = st.slider(
-                "🔎 구간 확대 및 이동 (아래 바를 움직여 그래프를 조절하세요)",
-                min_value=time_filter_start,
-                max_value=time_filter_end,
-                value=(time_filter_start, time_filter_end), 
-                format="HH시", 
-                step=timedelta(minutes=30)
-            )
-
-            view_start, view_end = zoom_range
             visible_data = daily_data[
-                (daily_data['수집시간'] >= view_start) & 
-                (daily_data['수집시간'] <= view_end)
+                (daily_data['수집시간'] >= time_filter_start) & 
+                (daily_data['수집시간'] <= time_filter_end)
             ]
 
             if visible_data.empty:
@@ -289,12 +269,13 @@ if not df.empty:
             else:
                 chart_data = visible_data.melt('수집시간', var_name='활동유형', value_name='카운트')
                 chart = create_fixed_chart(chart_data)
-                st.altair_chart(chart, use_container_width=True, key=f"main_chart_{selected_date}")
+                st.altair_chart(chart, use_container_width=True, key=f"main_chart_{selected_date}_{start_hour}_{end_hour}")
+
 
         # --- [Tab 2] 유저 랭킹 ---
         elif selected_tab == "🏆 유저 랭킹":
             st.subheader("🔥 Top 20")
-            st.caption("👇 궁금한 유저의 행을 클릭하면 상세 활동 그래프가 뜹니다. (같은 사람을 다시 눌러도 뜹니다!)")
+            st.caption("👇 궁금한 유저의 행을 클릭하면 상세 활동 그래프가 뜹니다.")
 
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
@@ -315,8 +296,17 @@ if not df.empty:
             
             gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=20)
             
-            # [수정] 정렬 이벤트 대신, '행 선택 이벤트' 시점에 자동 해제 실행
-            gb.configure_grid_options(onRowSelected=auto_deselect_js)
+            # [핵심 수정] 정렬 시 선택 해제 + 클릭 후 0.5초 뒤 자동 선택 해제
+            gb.configure_grid_options(
+                onSortChanged=JsCode("""
+                    function(e) { e.api.deselectAll(); }
+                """),
+                onCellClicked=JsCode("""
+                    function(e) {
+                        setTimeout(function() { e.api.deselectAll(); }, 500);
+                    }
+                """)
+            )
 
             gridOptions = gb.build()
 
@@ -396,8 +386,17 @@ if not df.empty:
                 
                 gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=15)
                 
-                # [수정] 여기도 동일한 자동 해제 기능 적용
-                gb.configure_grid_options(onRowSelected=auto_deselect_js)
+                # [핵심 수정] 정렬 시 선택 해제 + 클릭 후 0.5초 뒤 자동 선택 해제
+                gb.configure_grid_options(
+                    onSortChanged=JsCode("""
+                        function(e) { e.api.deselectAll(); }
+                    """),
+                    onCellClicked=JsCode("""
+                        function(e) {
+                            setTimeout(function() { e.api.deselectAll(); }, 500);
+                        }
+                    """)
+                )
 
                 gridOptions = gb.build()
 

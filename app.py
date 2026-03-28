@@ -1,15 +1,16 @@
 import streamlit as st
 import pandas as pd
-import boto3
-import io
 import math
 import altair as alt
 import random
-import concurrent.futures
-from botocore.config import Config
 from datetime import datetime, time, timedelta
 
-# JsCode 추가 임포트
+# [추가됨] 오라클 DB 및 지갑 해독용 라이브러리
+import oracledb
+import base64
+import os
+import zipfile
+
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode, JsCode
 
 # --- 페이지 기본 설정 ---
@@ -49,76 +50,89 @@ st_header_col, st_space, st_date_col, st_time_col = st.columns([5, 1, 2, 3])
 with st_header_col:
     st.title("📊 블루 아카이브 갤러리 대시보드")
 
-# --- Cloudflare R2 데이터 로드 ---
+
+# ==========================================
+# [NEW] 오라클 DB 연동 파트
+# ==========================================
+
+@st.cache_resource
+def setup_oracle_wallet():
+    """Streamlit 환경에 Base64로 저장된 지갑 파일의 압축을 풀어 세팅합니다."""
+    wallet_dir = "/tmp/oracle_wallet" # Streamlit Cloud에서 임시 쓰기가 가능한 경로
+    if not os.path.exists(wallet_dir):
+        os.makedirs(wallet_dir)
+        wallet_b64 = st.secrets["ORACLE_WALLET_ZIP_B64"]
+        zip_path = os.path.join(wallet_dir, "wallet.zip")
+        
+        # Base64 문자열을 실제 zip 파일로 복원
+        with open(zip_path, "wb") as f:
+            f.write(base64.b64decode(wallet_b64))
+        
+        # 압축 해제
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(wallet_dir)
+            
+    return wallet_dir
+
 @st.cache_data(ttl=300, show_spinner=False)
-def load_data_from_r2():
+def load_data_from_oracle():
+    """오라클 DB에서 최근 14일치 데이터를 즉시 쿼리해옵니다."""
     try:
-        aws_access_key_id = st.secrets["CF_ACCESS_KEY_ID"]
-        aws_secret_access_key = st.secrets["CF_SECRET_ACCESS_KEY"]
-        account_id = st.secrets["CF_ACCOUNT_ID"]
-        bucket_name = st.secrets["CF_BUCKET_NAME"]
-    except KeyError:
-        st.error("Secrets 설정 오류: Streamlit 관리자 페이지에서 키를 확인해주세요.")
-        return pd.DataFrame()
-
-    s3 = boto3.client(
-        's3',
-        endpoint_url=f'https://{account_id}.r2.cloudflarestorage.com',
-        aws_access_key_id=aws_access_key_id,
-        aws_secret_access_key=aws_secret_access_key,
-        config=Config(signature_version='s3v4')
-    )
-
-    try:
-        response = s3.list_objects_v2(Bucket=bucket_name)
+        wallet_dir = setup_oracle_wallet()
+        
+        # Thin Mode 접속 (인스턴트 클라이언트 필요 없음)
+        connection = oracledb.connect(
+            user=st.secrets["ORACLE_DB_USER"],
+            password=st.secrets["ORACLE_DB_PASSWORD"],
+            dsn=st.secrets["ORACLE_DB_SERVICE"],
+            config_dir=wallet_dir,
+            wallet_location=wallet_dir,
+            wallet_password=st.secrets["ORACLE_WALLET_PASSWORD"]
+        )
+        
+        # 최근 14일 필터링 (DB에서 아예 잘라옴 -> 메모리 초절약)
+        cutoff_date = datetime.now() - timedelta(days=14)
+        cutoff_str = cutoff_date.strftime("%Y-%m-%d %H:%M")
+        
+        query = """
+            SELECT COLLECTION_TIME, NICKNAME, UID_IP, USER_TYPE, POST_COUNT, COMMENT_COUNT, TOTAL_COUNT
+            FROM GALLERY_LOG
+            WHERE COLLECTION_TIME >= :1
+            ORDER BY COLLECTION_TIME ASC
+        """
+        
+        # 쿼리 실행 및 DataFrame 변환
+        with connection.cursor() as cursor:
+            cursor.execute(query, [cutoff_str])
+            columns = [col[0] for col in cursor.description]
+            data = cursor.fetchall()
+            
+        connection.close()
+        
+        df = pd.DataFrame(data, columns=columns)
+        
+        if df.empty:
+            return pd.DataFrame()
+            
+        # 기존 로직과 완벽 호환되도록 컬럼명 변경
+        df.rename(columns={
+            'COLLECTION_TIME': '수집시간',
+            'NICKNAME': '닉네임',
+            'UID_IP': 'ID(IP)',
+            'USER_TYPE': '유저타입',
+            'POST_COUNT': '작성글수',
+            'COMMENT_COUNT': '작성댓글수',
+            'TOTAL_COUNT': '총활동수'
+        }, inplace=True)
+        
+        df['수집시간'] = pd.to_datetime(df['수집시간'])
+        
+        return df
+        
     except Exception as e:
-        st.error(f"R2 접속 실패: {e}")
+        st.error(f"오라클 DB 연결/조회 실패: {e}")
         return pd.DataFrame()
 
-    if 'Contents' not in response:
-        return pd.DataFrame()
-
-    all_files = [f for f in response['Contents'] if f['Key'].endswith('.xlsx')]
-    if not all_files:
-        return pd.DataFrame()
-
-    target_files = []
-    cutoff_date = datetime.now() - timedelta(days=14)
-
-    for f in all_files:
-        try:
-            date_part = f['Key'].split('_')[0]
-            file_date = datetime.strptime(date_part, "%Y-%m-%d")
-            if file_date >= cutoff_date:
-                target_files.append(f)
-        except:
-            target_files.append(f)
-
-    if not target_files:
-        return pd.DataFrame()
-
-    def fetch_and_parse(file_info):
-        file_key = file_info['Key']
-        try:
-            obj = s3.get_object(Bucket=bucket_name, Key=file_key)
-            data = obj['Body'].read()
-            return pd.read_excel(io.BytesIO(data), engine='openpyxl')
-        except Exception:
-            return None
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-        results = list(executor.map(fetch_and_parse, target_files))
-    
-    all_dfs = [df for df in results if df is not None]
-    
-    if not all_dfs:
-        return pd.DataFrame()
-
-    final_df = pd.concat(all_dfs, ignore_index=True)
-    final_df['수집시간'] = pd.to_datetime(final_df['수집시간'])
-
-    final_df['총활동수'] = final_df['작성글수'] + final_df['작성댓글수']
-    return final_df
 
 # --- 차트 함수 ---
 def create_fixed_chart(chart_data, title_prefix=""):
@@ -197,11 +211,12 @@ def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
     st.info(f"📝 총 게시글: {u_posts}개 / 💬 총 댓글: {u_comments}개")
 
 # --- 메인 실행 ---
-loading_messages = ["☁️ 데이터 로딩 중...", "🏃‍♂️ 열심히 가져오는 중...", "🔍 분석 중...", "💾 잠시만요...", "🤖 삐삐쀼쀼"]
+loading_messages = ["☁️ 오라클 DB 접속 중...", "🏃‍♂️ 빛의 속도로 쿼리 중...", "🔍 분석 중...", "💾 잠시만요...", "🤖 삐삐쀼쀼"]
 loading_text = random.choice(loading_messages)
 
 with st.spinner(loading_text):
-    df = load_data_from_r2()
+    # [수정] 오라클 DB에서 데이터 로드
+    df = load_data_from_oracle()
 
 if not df.empty:
     min_date = df['수집시간'].dt.date.min()
@@ -296,14 +311,12 @@ if not df.empty:
             
             gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=20)
             
-            # [핵심 수정] 0.5초 강제 리셋을 없애고, 토글 기능 활성화
             gb.configure_grid_options(
-                rowMultiSelectWithClick=True, # 클릭하면 선택, 다시 클릭하면 해제됨
+                rowMultiSelectWithClick=True,
                 suppressRowDeselection=False,
                 onSortChanged=JsCode("""
                     function(e) { e.api.deselectAll(); }
                 """)
-                # onCellClicked 삭제됨 (창이 멋대로 꺼지는 원인)
             )
 
             gridOptions = gb.build()
@@ -384,7 +397,6 @@ if not df.empty:
                 
                 gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=15)
                 
-                # [핵심 수정] 0.5초 리셋 삭제, 토글 기능 활성화
                 gb.configure_grid_options(
                     rowMultiSelectWithClick=True,
                     suppressRowDeselection=False,
@@ -419,4 +431,4 @@ if not df.empty:
                     show_user_detail_modal(nick, uid, account_type, df, selected_date)
 
 else:
-    st.info("데이터 로딩 중... (데이터가 없거나 R2 연결을 확인해주세요)")
+    st.info("데이터 로딩 중... (데이터가 없거나 DB 연결을 확인해주세요)")

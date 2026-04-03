@@ -80,7 +80,6 @@ def load_data_from_oracle():
     try:
         wallet_dir = setup_oracle_wallet()
         
-        # Thin Mode 접속 (인스턴트 클라이언트 필요 없음)
         connection = oracledb.connect(
             user=st.secrets["ORACLE_DB_USER"],
             password=st.secrets["ORACLE_DB_PASSWORD"],
@@ -90,7 +89,6 @@ def load_data_from_oracle():
             wallet_password=st.secrets["ORACLE_WALLET_PASSWORD"]
         )
         
-        # 최근 14일 필터링 (DB에서 아예 잘라옴 -> 메모리 초절약)
         cutoff_date = datetime.now() - timedelta(days=14)
         cutoff_str = cutoff_date.strftime("%Y-%m-%d %H:%M")
         
@@ -101,7 +99,6 @@ def load_data_from_oracle():
             ORDER BY COLLECTION_TIME ASC
         """
         
-        # 쿼리 실행 및 DataFrame 변환
         with connection.cursor() as cursor:
             cursor.execute(query, [cutoff_str])
             columns = [col[0] for col in cursor.description]
@@ -114,7 +111,6 @@ def load_data_from_oracle():
         if df.empty:
             return pd.DataFrame()
             
-        # 기존 로직과 완벽 호환되도록 컬럼명 변경
         df.rename(columns={
             'COLLECTION_TIME': '수집시간',
             'NICKNAME': '닉네임',
@@ -126,6 +122,9 @@ def load_data_from_oracle():
         }, inplace=True)
         
         df['수집시간'] = pd.to_datetime(df['수집시간'])
+        df['작성글수'] = pd.to_numeric(df['작성글수'], errors='coerce').fillna(0).astype(int)
+        df['작성댓글수'] = pd.to_numeric(df['작성댓글수'], errors='coerce').fillna(0).astype(int)
+        df['총활동수'] = pd.to_numeric(df['총활동수'], errors='coerce').fillna(0).astype(int)
         
         return df
         

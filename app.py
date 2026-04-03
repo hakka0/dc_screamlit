@@ -203,7 +203,7 @@ def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
     chart_data = user_trend.melt('수집시간', var_name='활동유형', value_name='카운트')
     
     chart = create_fixed_chart(chart_data, title_prefix=f"{nick}님의")
-    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(chart, width="stretch")
     
     u_posts = user_daily_df['작성글수'].sum()
     u_comments = user_daily_df['작성댓글수'].sum()
@@ -283,7 +283,7 @@ if not df.empty:
             else:
                 chart_data = visible_data.melt('수집시간', var_name='활동유형', value_name='카운트')
                 chart = create_fixed_chart(chart_data)
-                st.altair_chart(chart, use_container_width=True, key=f"main_chart_{selected_date}_{start_hour}_{end_hour}")
+                st.altair_chart(chart, width="stretch", key=f"main_chart_{selected_date}_{start_hour}_{end_hour}")
 
 
         # --- [Tab 2] 유저 랭킹 ---
@@ -327,12 +327,11 @@ if not df.empty:
             grid_response = AgGrid(
                 top_users,
                 gridOptions=gridOptions,
-                update_mode=GridUpdateMode.SELECTION_CHANGED, 
-                data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+                update_on=['selectionChanged'], 
                 fit_columns_on_grid_load=True, 
-                theme='balham', # [해결 2] 가장 안정적인 'balham' 테마로 변경
+                theme='balham', 
                 height=600,
-                allow_unsafe_jscode=False, # JsCode를 껐으므로 False로 변경
+                allow_unsafe_jscode=False,
                 key="ranking_grid"
             )
 
@@ -416,10 +415,9 @@ if not df.empty:
                 grid_response = AgGrid(
                     page_df,
                     gridOptions=gridOptions,
-                    update_mode=GridUpdateMode.SELECTION_CHANGED, 
-                    data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+                    update_on=['selectionChanged'], 
                     fit_columns_on_grid_load=True, 
-                    theme='balham', # [해결 2] 테마 변경
+                    theme='balham', 
                     height=600,
                     allow_unsafe_jscode=False,
                     key="search_grid" 

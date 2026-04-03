@@ -11,8 +11,6 @@ import base64
 import os
 import zipfile
 
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode, JsCode
-
 # --- 페이지 기본 설정 ---
 st.set_page_config(page_title="ProjectMX Dashboard", layout="wide")
 
@@ -289,11 +287,10 @@ if not df.empty:
         # --- [Tab 2] 유저 랭킹 ---
         elif selected_tab == "🏆 유저 랭킹":
             st.subheader("🔥 Top 20")
-            st.caption("👇 이미 선택된(색칠된) 행을 다시 보려면, 행을 한 번 더 눌러 선택을 푼 뒤 다시 클릭하세요.")
+            st.caption("👇 특정 유저의 상세 활동을 보려면 행을 클릭하세요.")
 
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             
-            # [해결 1] groupby 이후 numpy 타입으로 변한 숫자를 다시 파이썬 기본 int로 강제 변환
             ranking_df['총활동수'] = ranking_df['총활동수'].astype(int)
             ranking_df['작성글수'] = ranking_df['작성글수'].astype(int)
             ranking_df['작성댓글수'] = ranking_df['작성댓글수'].astype(int)
@@ -301,48 +298,26 @@ if not df.empty:
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
             top_users = top_users.rename(columns={'유저타입': '계정타입'})
             
-            gb = GridOptionsBuilder.from_dataframe(top_users)
-            gb.configure_default_column(enablePivot=False, enableValue=False, enableRowGroup=False)
-            gb.configure_column("총활동수", type=["numericColumn", "numberColumnFilter"], precision=0)
-            gb.configure_column("작성글수", type=["numericColumn"], precision=0)
-            gb.configure_column("작성댓글수", type=["numericColumn"], precision=0)
-            
-            gb.configure_selection(
-                selection_mode='single', 
-                use_checkbox=False, 
-                pre_selected_rows=[],
-                suppressRowClickSelection=False
-            )
-            
-            gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=20)
-            
-            # [해결 3] 화면을 하얗게 만들 위험이 있는 JsCode 블록 제거 (안전성 최우선)
-            gb.configure_grid_options(
-                rowMultiSelectWithClick=True,
-                suppressRowDeselection=False
-            )
-
-            gridOptions = gb.build()
-
-            grid_response = AgGrid(
+            # ==========================================
+            # [새로운 방식] Streamlit 순정 데이터프레임 사용 (절대 고장 안 남)
+            # ==========================================
+            event = st.dataframe(
                 top_users,
-                gridOptions=gridOptions,
-                update_on=['selectionChanged'], 
-                fit_columns_on_grid_load=True, 
-                theme='balham', 
-                height=600,
-                allow_unsafe_jscode=False,
-                key="ranking_grid"
+                use_container_width=True,
+                hide_index=True,
+                on_select="rerun",          # 행을 클릭하면 즉시 반응
+                selection_mode="single-row", # 한 줄만 선택 가능
+                key="ranking_native_grid"
             )
 
-            selected_rows = grid_response['selected_rows']
-            
-            if selected_rows is not None and len(selected_rows) > 0:
-                selected_row = selected_rows.iloc[0] if isinstance(selected_rows, pd.DataFrame) else selected_rows[0]
+            # 클릭한 행이 있다면 모달 창 띄우기
+            if len(event.selection.rows) > 0:
+                selected_index = event.selection.rows[0]
+                selected_row = top_users.iloc[selected_index]
                 
-                nick = selected_row.get('닉네임') if isinstance(selected_row, dict) else selected_row['닉네임']
-                uid = selected_row.get('ID(IP)') if isinstance(selected_row, dict) else selected_row['ID(IP)']
-                account_type = selected_row.get('계정타입') if isinstance(selected_row, dict) else selected_row['계정타입']
+                nick = selected_row['닉네임']
+                uid = selected_row['ID(IP)']
+                account_type = selected_row['계정타입']
                 
                 show_user_detail_modal(nick, uid, account_type, df, selected_date)
 
@@ -350,7 +325,7 @@ if not df.empty:
         # --- [Tab 3] 유저 검색 ---
         elif selected_tab == "👥 유저 검색":
             st.subheader("🔍 유저 검색 및 전체 목록")
-            st.caption("👇 이미 선택된(색칠된) 행을 다시 보려면, 행을 한 번 더 눌러 선택을 푼 뒤 다시 클릭하세요.")
+            st.caption("👇 특정 유저의 상세 활동을 보려면 행을 클릭하세요.")
 
             user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({
                 '작성글수': 'sum',
@@ -358,7 +333,6 @@ if not df.empty:
                 '총활동수': 'sum'
             }).reset_index()
 
-            # [해결 1] 동일하게 숫자 타입 강제 변환
             user_list_df['총활동수'] = user_list_df['총활동수'].astype(int)
             user_list_df['작성글수'] = user_list_df['작성글수'].astype(int)
             user_list_df['작성댓글수'] = user_list_df['작성댓글수'].astype(int)
@@ -390,47 +364,26 @@ if not df.empty:
                 display_columns = ['닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수']
                 page_df = page_df[display_columns]
 
-                gb = GridOptionsBuilder.from_dataframe(page_df)
-                gb.configure_default_column(enablePivot=False, enableValue=False, enableRowGroup=False)
-                gb.configure_column("총활동수", type=["numericColumn", "numberColumnFilter"], precision=0)
-                gb.configure_column("작성글수", type=["numericColumn"], precision=0)
-                gb.configure_column("작성댓글수", type=["numericColumn"], precision=0)
-                
-                gb.configure_selection(
-                    selection_mode='single', 
-                    use_checkbox=False, 
-                    pre_selected_rows=[],
-                    suppressRowClickSelection=False
-                )
-                
-                gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=15)
-                
-                gb.configure_grid_options(
-                    rowMultiSelectWithClick=True,
-                    suppressRowDeselection=False
-                )
-
-                gridOptions = gb.build()
-
-                grid_response = AgGrid(
+                # ==========================================
+                # [새로운 방식] Streamlit 순정 데이터프레임 사용
+                # ==========================================
+                event = st.dataframe(
                     page_df,
-                    gridOptions=gridOptions,
-                    update_on=['selectionChanged'], 
-                    fit_columns_on_grid_load=True, 
-                    theme='balham', 
-                    height=600,
-                    allow_unsafe_jscode=False,
-                    key="search_grid" 
+                    use_container_width=True,
+                    hide_index=True,
+                    on_select="rerun",
+                    selection_mode="single-row",
+                    key="search_native_grid"
                 )
 
-                selected_rows = grid_response['selected_rows']
-                
-                if selected_rows is not None and len(selected_rows) > 0:
-                    selected_row = selected_rows.iloc[0] if isinstance(selected_rows, pd.DataFrame) else selected_rows[0]
+                # 클릭한 행이 있다면 모달 창 띄우기
+                if len(event.selection.rows) > 0:
+                    selected_index = event.selection.rows[0]
+                    selected_row = page_df.iloc[selected_index]
                     
-                    nick = selected_row.get('닉네임') if isinstance(selected_row, dict) else selected_row['닉네임']
-                    uid = selected_row.get('ID(IP)') if isinstance(selected_row, dict) else selected_row['ID(IP)']
-                    account_type = selected_row.get('계정타입') if isinstance(selected_row, dict) else selected_row['계정타입']
+                    nick = selected_row['닉네임']
+                    uid = selected_row['ID(IP)']
+                    account_type = selected_row['계정타입']
                     
                     show_user_detail_modal(nick, uid, account_type, df, selected_date)
 

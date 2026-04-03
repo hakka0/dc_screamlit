@@ -292,6 +292,12 @@ if not df.empty:
             st.caption("👇 이미 선택된(색칠된) 행을 다시 보려면, 행을 한 번 더 눌러 선택을 푼 뒤 다시 클릭하세요.")
 
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
+            
+            # [해결 1] groupby 이후 numpy 타입으로 변한 숫자를 다시 파이썬 기본 int로 강제 변환
+            ranking_df['총활동수'] = ranking_df['총활동수'].astype(int)
+            ranking_df['작성글수'] = ranking_df['작성글수'].astype(int)
+            ranking_df['작성댓글수'] = ranking_df['작성댓글수'].astype(int)
+
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
             top_users = top_users.rename(columns={'유저타입': '계정타입'})
             
@@ -310,12 +316,10 @@ if not df.empty:
             
             gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=20)
             
+            # [해결 3] 화면을 하얗게 만들 위험이 있는 JsCode 블록 제거 (안전성 최우선)
             gb.configure_grid_options(
                 rowMultiSelectWithClick=True,
-                suppressRowDeselection=False,
-                onSortChanged=JsCode("""
-                    function(e) { e.api.deselectAll(); }
-                """)
+                suppressRowDeselection=False
             )
 
             gridOptions = gb.build()
@@ -326,9 +330,9 @@ if not df.empty:
                 update_mode=GridUpdateMode.SELECTION_CHANGED, 
                 data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
                 fit_columns_on_grid_load=True, 
-                theme='streamlit', 
+                theme='balham', # [해결 2] 가장 안정적인 'balham' 테마로 변경
                 height=600,
-                allow_unsafe_jscode=True,
+                allow_unsafe_jscode=False, # JsCode를 껐으므로 False로 변경
                 key="ranking_grid"
             )
 
@@ -354,6 +358,12 @@ if not df.empty:
                 '작성댓글수': 'sum',
                 '총활동수': 'sum'
             }).reset_index()
+
+            # [해결 1] 동일하게 숫자 타입 강제 변환
+            user_list_df['총활동수'] = user_list_df['총활동수'].astype(int)
+            user_list_df['작성글수'] = user_list_df['작성글수'].astype(int)
+            user_list_df['작성댓글수'] = user_list_df['작성댓글수'].astype(int)
+            
             user_list_df = user_list_df.sort_values(by='닉네임', ascending=True)
 
             col_search_type, col_search_input = st.columns([1.2, 4])
@@ -398,10 +408,7 @@ if not df.empty:
                 
                 gb.configure_grid_options(
                     rowMultiSelectWithClick=True,
-                    suppressRowDeselection=False,
-                    onSortChanged=JsCode("""
-                        function(e) { e.api.deselectAll(); }
-                    """)
+                    suppressRowDeselection=False
                 )
 
                 gridOptions = gb.build()
@@ -412,9 +419,9 @@ if not df.empty:
                     update_mode=GridUpdateMode.SELECTION_CHANGED, 
                     data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
                     fit_columns_on_grid_load=True, 
-                    theme='streamlit', 
+                    theme='balham', # [해결 2] 테마 변경
                     height=600,
-                    allow_unsafe_jscode=True,
+                    allow_unsafe_jscode=False,
                     key="search_grid" 
                 )
 

@@ -289,7 +289,7 @@ if not df.empty:
         # --- [Tab 2] 유저 랭킹 ---
         elif selected_tab == "🏆 유저 랭킹":
             st.subheader("🔥 Top 20")
-            st.caption("👇 유저 정보(닉네임, 숫자 등) 아무 곳이나 클릭하면 상세 활동을 볼 수 있습니다.")
+            st.caption("👇 특정 유저의 상세 활동을 보려면 행을 클릭하세요.")
 
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             
@@ -299,36 +299,23 @@ if not df.empty:
 
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
             top_users = top_users.rename(columns={'유저타입': '계정타입'})
-            
-            # --- [최신 AgGrid 세팅] ---
-            gb = GridOptionsBuilder.from_dataframe(top_users)
-            
-            # 체크박스 없애고, 한 줄 선택 가능하게 설정
-            gb.configure_selection(selection_mode='single', use_checkbox=False)
-            
-            # [핵심] 아무 곳이나 클릭해도 선택되도록 허용
-            gb.configure_grid_options(suppressRowClickSelection=False)
-
-            gridOptions = gb.build()
-
-            grid_response = AgGrid(
+            event = st.dataframe(
                 top_users,
-                gridOptions=gridOptions,
-                update_on=['selectionChanged'], # 최신 버전 업데이트 트리거 (경고 해결)
-                columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS, # 화면 뻗음 방지
-                theme='balham',
-                height=600,
-                key="ranking_aggrid"
+                use_container_width=True,
+                hide_index=True,
+                on_select="rerun",          # 행을 클릭하면 즉시 반응
+                selection_mode="single-row", # 한 줄만 선택 가능
+                key="ranking_native_grid"
             )
 
-            # 클릭 이벤트 감지 및 모달 창 띄우기
-            selected_rows = grid_response.get('selected_rows')
-            if selected_rows is not None and len(selected_rows) > 0:
-                selected_row = selected_rows.iloc[0] if isinstance(selected_rows, pd.DataFrame) else selected_rows[0]
+            # 클릭한 행이 있다면 모달 창 띄우기
+            if len(event.selection.rows) > 0:
+                selected_index = event.selection.rows[0]
+                selected_row = top_users.iloc[selected_index]
                 
-                nick = selected_row.get('닉네임') if isinstance(selected_row, dict) else selected_row['닉네임']
-                uid = selected_row.get('ID(IP)') if isinstance(selected_row, dict) else selected_row['ID(IP)']
-                account_type = selected_row.get('계정타입') if isinstance(selected_row, dict) else selected_row['계정타입']
+                nick = selected_row['닉네임']
+                uid = selected_row['ID(IP)']
+                account_type = selected_row['계정타입']
                 
                 show_user_detail_modal(nick, uid, account_type, df, selected_date)
 
@@ -374,10 +361,6 @@ if not df.empty:
                 page_df = target_df.rename(columns={'유저타입': '계정타입'})
                 display_columns = ['닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수']
                 page_df = page_df[display_columns]
-
-                # ==========================================
-                # [새로운 방식] Streamlit 순정 데이터프레임 사용
-                # ==========================================
                 event = st.dataframe(
                     page_df,
                     use_container_width=True,

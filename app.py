@@ -289,7 +289,7 @@ if not df.empty:
         # --- [Tab 2] 유저 랭킹 ---
         elif selected_tab == "🏆 유저 랭킹":
             st.subheader("🔥 Top 20")
-            st.caption("👇 특정 유저의 상세 활동을 보려면 행을 클릭하세요.")
+            st.caption("✅ 체크박스 클릭시 개인용 그래프가 활성화")
 
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             
@@ -323,7 +323,7 @@ if not df.empty:
         # --- [Tab 3] 유저 검색 ---
         elif selected_tab == "👥 유저 검색":
             st.subheader("🔍 유저 검색 및 전체 목록")
-            st.caption("👇 특정 유저의 상세 활동을 보려면 행을 클릭하세요.")
+            st.caption("✅ 체크박스 클릭시 개인용 그래프가 활성화")
 
             user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({
                 '작성글수': 'sum',

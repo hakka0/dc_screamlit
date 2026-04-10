@@ -205,7 +205,7 @@ def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
     chart_data = user_trend.melt('수집시간', var_name='활동유형', value_name='카운트')
     
     chart = create_fixed_chart(chart_data, title_prefix=f"{nick}님의")
-    st.altair_chart(chart, width="stretch")
+    st.altair_chart(chart, use_container_width=True)
     
     u_posts = user_daily_df['작성글수'].sum()
     u_comments = user_daily_df['작성댓글수'].sum()
@@ -285,7 +285,7 @@ if not df.empty:
             else:
                 chart_data = visible_data.melt('수집시간', var_name='활동유형', value_name='카운트')
                 chart = create_fixed_chart(chart_data)
-                st.altair_chart(chart, width="stretch", key=f"main_chart_{selected_date}_{start_hour}_{end_hour}")
+                st.altair_chart(chart, use_container_width=True, key=f"main_chart_{selected_date}_{start_hour}_{end_hour}")
 
 
         # --- [Tab 2] 유저 랭킹 ---

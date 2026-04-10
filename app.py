@@ -318,7 +318,7 @@ if not df.empty:
 
         # --- [Tab 3] 유저 검색 ---
         elif selected_tab == "👥 유저 검색":
-            st.subheader("유저 검색 및 전체 목록")
+            st.subheader("전체 유저 목록")
             st.caption("✅ 특정 유저의 상세 활동을 보려면 행(체크박스)을 클릭하세요.")
 
             user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({

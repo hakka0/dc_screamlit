@@ -1,17 +1,14 @@
 import streamlit as st
 import pandas as pd
-import math
 import altair as alt
 import random
 from datetime import datetime, time, timedelta
 
-# [추가됨] 오라클 DB 및 지갑 해독용 라이브러리
+# 오라클 DB 및 지갑 해독용 라이브러리
 import oracledb
 import base64
 import os
 import zipfile
-
-from st_aggrid import AgGrid, GridOptionsBuilder, ColumnsAutoSizeMode
 
 # --- 페이지 기본 설정 ---
 st.set_page_config(page_title="ProjectMX Dashboard", layout="wide")
@@ -48,33 +45,30 @@ st.markdown("""
 st_header_col, st_space, st_date_col, st_time_col = st.columns([5, 1, 2, 3])
 
 with st_header_col:
-    st.title("블루 아카이브 갤러리 대시보드")
+    st.title("📊 블루 아카이브 갤러리 대시보드")
 
 
 # ==========================================
-# [NEW] 오라클 DB 연동 파트
+# 오라클 DB 연동 파트
 # ==========================================
-
 @st.cache_resource
 def setup_oracle_wallet():
     """Streamlit 환경에 Base64로 저장된 지갑 파일의 압축을 풀어 세팅합니다."""
-    wallet_dir = "/tmp/oracle_wallet" # Streamlit Cloud에서 임시 쓰기가 가능한 경로
+    wallet_dir = "/tmp/oracle_wallet"
     if not os.path.exists(wallet_dir):
         os.makedirs(wallet_dir)
         wallet_b64 = st.secrets["ORACLE_WALLET_ZIP_B64"]
         zip_path = os.path.join(wallet_dir, "wallet.zip")
         
-        # Base64 문자열을 실제 zip 파일로 복원
         with open(zip_path, "wb") as f:
             f.write(base64.b64decode(wallet_b64))
         
-        # 압축 해제
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(wallet_dir)
             
     return wallet_dir
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False) # 캐시 1시간(3600초)으로 연장
 def load_data_from_oracle():
     """오라클 DB에서 최근 14일치 데이터를 즉시 쿼리해옵니다."""
     try:
@@ -100,8 +94,7 @@ def load_data_from_oracle():
         """
         
         with connection.cursor() as cursor:
-            cursor.arraysize = 10000
-            
+            cursor.arraysize = 10000 # [핵심] 네트워크 왕복 축소로 로딩 속도 비약적 향상
             cursor.execute(query, [cutoff_str])
             columns = [col[0] for col in cursor.description]
             data = cursor.fetchall()
@@ -124,6 +117,8 @@ def load_data_from_oracle():
         }, inplace=True)
         
         df['수집시간'] = pd.to_datetime(df['수집시간'])
+        
+        # 숫자 타입 강제 변환 (표 뻗음 방지)
         df['작성글수'] = pd.to_numeric(df['작성글수'], errors='coerce').fillna(0).astype(int)
         df['작성댓글수'] = pd.to_numeric(df['작성댓글수'], errors='coerce').fillna(0).astype(int)
         df['총활동수'] = pd.to_numeric(df['총활동수'], errors='coerce').fillna(0).astype(int)
@@ -205,18 +200,19 @@ def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
     chart_data = user_trend.melt('수집시간', var_name='활동유형', value_name='카운트')
     
     chart = create_fixed_chart(chart_data, title_prefix=f"{nick}님의")
+    # [차트] width="stretch" 적용 (모달 내부)
     st.altair_chart(chart, width="stretch")
     
     u_posts = user_daily_df['작성글수'].sum()
     u_comments = user_daily_df['작성댓글수'].sum()
     st.info(f"📝 총 게시글: {u_posts}개 / 💬 총 댓글: {u_comments}개")
 
+
 # --- 메인 실행 ---
 loading_messages = ["☁️ 오라클 DB 접속 중...", "🏃‍♂️ 빛의 속도로 쿼리 중...", "🔍 분석 중...", "💾 잠시만요...", "🤖 삐삐쀼쀼"]
 loading_text = random.choice(loading_messages)
 
 with st.spinner(loading_text):
-    # [수정] 오라클 DB에서 데이터 로드
     df = load_data_from_oracle()
 
 if not df.empty:
@@ -285,13 +281,14 @@ if not df.empty:
             else:
                 chart_data = visible_data.melt('수집시간', var_name='활동유형', value_name='카운트')
                 chart = create_fixed_chart(chart_data)
+                # [차트] width="stretch" 적용
                 st.altair_chart(chart, width="stretch", key=f"main_chart_{selected_date}_{start_hour}_{end_hour}")
 
 
         # --- [Tab 2] 유저 랭킹 ---
         elif selected_tab == "🏆 유저 랭킹":
             st.subheader("🔥 Top 20")
-            st.caption("✅ 체크박스 클릭시 개인용 그래프가 활성화")
+            st.caption("👇 특정 유저의 상세 활동을 보려면 행(체크박스)을 클릭하세요.")
 
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             
@@ -301,18 +298,23 @@ if not df.empty:
 
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
             top_users = top_users.rename(columns={'유저타입': '계정타입'})
+            
+            # [표] use_container_width=True 유지 (블랙스크린 방지)
             event = st.dataframe(
                 top_users,
                 use_container_width=True,
                 hide_index=True,
-                on_select="rerun",          # 행을 클릭하면 즉시 반응
-                selection_mode="single-row", # 한 줄만 선택 가능
+                on_select="rerun",
+                selection_mode="single-row",
                 key="ranking_native_grid"
             )
 
-            # 클릭한 행이 있다면 모달 창 띄우기
-            if len(event.selection.rows) > 0:
-                selected_index = event.selection.rows[0]
+            # 클릭 이벤트 감지 
+            selection = event.selection
+            selected_rows = selection.get("rows", []) if isinstance(selection, dict) else getattr(selection, "rows", [])
+
+            if len(selected_rows) > 0:
+                selected_index = selected_rows[0]
                 selected_row = top_users.iloc[selected_index]
                 
                 nick = selected_row['닉네임']
@@ -325,7 +327,7 @@ if not df.empty:
         # --- [Tab 3] 유저 검색 ---
         elif selected_tab == "👥 유저 검색":
             st.subheader("🔍 유저 검색 및 전체 목록")
-            st.caption("✅ 체크박스 클릭시 개인용 그래프가 활성화")
+            st.caption("👇 특정 유저의 상세 활동을 보려면 행(체크박스)을 클릭하세요.")
 
             user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({
                 '작성글수': 'sum',
@@ -363,6 +365,8 @@ if not df.empty:
                 page_df = target_df.rename(columns={'유저타입': '계정타입'})
                 display_columns = ['닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수']
                 page_df = page_df[display_columns]
+
+                # [표] use_container_width=True 유지 (블랙스크린 방지)
                 event = st.dataframe(
                     page_df,
                     use_container_width=True,
@@ -372,9 +376,12 @@ if not df.empty:
                     key="search_native_grid"
                 )
 
-                # 클릭한 행이 있다면 모달 창 띄우기
-                if len(event.selection.rows) > 0:
-                    selected_index = event.selection.rows[0]
+                # 클릭 이벤트 감지
+                selection = event.selection
+                selected_rows = selection.get("rows", []) if isinstance(selection, dict) else getattr(selection, "rows", [])
+
+                if len(selected_rows) > 0:
+                    selected_index = selected_rows[0]
                     selected_row = page_df.iloc[selected_index]
                     
                     nick = selected_row['닉네임']

@@ -45,7 +45,7 @@ st.markdown("""
 st_header_col, st_space, st_date_col, st_time_col = st.columns([5, 1, 2, 3])
 
 with st_header_col:
-    st.title("📊 블루 아카이브 갤러리 대시보드")
+    st.title("블루 아카이브 갤러리 대시보드")
 
 
 # ==========================================
@@ -53,7 +53,6 @@ with st_header_col:
 # ==========================================
 @st.cache_resource
 def setup_oracle_wallet():
-    """Streamlit 환경에 Base64로 저장된 지갑 파일의 압축을 풀어 세팅합니다."""
     wallet_dir = "/tmp/oracle_wallet"
     if not os.path.exists(wallet_dir):
         os.makedirs(wallet_dir)
@@ -70,7 +69,6 @@ def setup_oracle_wallet():
 
 @st.cache_data(ttl=300, show_spinner=False) # 캐시 1시간(3600초)으로 연장
 def load_data_from_oracle():
-    """오라클 DB에서 최근 14일치 데이터를 즉시 쿼리해옵니다."""
     try:
         wallet_dir = setup_oracle_wallet()
         
@@ -94,7 +92,7 @@ def load_data_from_oracle():
         """
         
         with connection.cursor() as cursor:
-            cursor.arraysize = 10000 # [핵심] 네트워크 왕복 축소로 로딩 속도 비약적 향상
+            cursor.arraysize = 10000
             cursor.execute(query, [cutoff_str])
             columns = [col[0] for col in cursor.description]
             data = cursor.fetchall()
@@ -117,8 +115,6 @@ def load_data_from_oracle():
         }, inplace=True)
         
         df['수집시간'] = pd.to_datetime(df['수집시간'])
-        
-        # 숫자 타입 강제 변환 (표 뻗음 방지)
         df['작성글수'] = pd.to_numeric(df['작성글수'], errors='coerce').fillna(0).astype(int)
         df['작성댓글수'] = pd.to_numeric(df['작성댓글수'], errors='coerce').fillna(0).astype(int)
         df['총활동수'] = pd.to_numeric(df['총활동수'], errors='coerce').fillna(0).astype(int)
@@ -174,14 +170,14 @@ def create_fixed_chart(chart_data, title_prefix=""):
 
     final_chart = (lines + selectors + rules).properties(
         height=400,
-        title=f"{title_prefix} 상세 활동 추이"
+        title=f"{title_prefix}"
     )
 
     return final_chart
 
 
 # --- 유저 상세 정보 모달 ---
-@st.dialog("👤 유저 상세 활동 분석")
+@st.dialog("👤 개인 그래프")
 def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
     st.subheader(f"{nick} ({user_type})")
     st.caption(f"ID(IP): {user_id} | 기준일: {target_date}")
@@ -200,7 +196,6 @@ def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
     chart_data = user_trend.melt('수집시간', var_name='활동유형', value_name='카운트')
     
     chart = create_fixed_chart(chart_data, title_prefix=f"{nick}님의")
-    # [차트] width="stretch" 적용 (모달 내부)
     st.altair_chart(chart, width="stretch")
     
     u_posts = user_daily_df['작성글수'].sum()
@@ -209,7 +204,7 @@ def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
 
 
 # --- 메인 실행 ---
-loading_messages = ["☁️ 오라클 DB 접속 중...", "🏃‍♂️ 빛의 속도로 쿼리 중...", "🔍 분석 중...", "💾 잠시만요...", "🤖 삐삐쀼쀼"]
+loading_messages = ["☁️ 키보토스에 접속 중", "🏃‍♂️ 아로나가 달리고 있어요!", "🔍 케이가 분석 중", "💾 잠시만요!", "🤖 삐삐쀼쀼"]
 loading_text = random.choice(loading_messages)
 
 with st.spinner(loading_text):
@@ -242,7 +237,7 @@ if not df.empty:
     st.markdown("---")
 
     selected_tab = st.radio(
-        "메뉴 선택", ["📈 데이터 상세", "🏆 유저 랭킹", "👥 유저 검색"],
+        "메뉴 선택", ["📈 시간대별 그래프", "🏆 유저 랭킹", "👥 유저 검색"],
         horizontal=True, key="main_menu", label_visibility="collapsed"
     )
     
@@ -252,7 +247,7 @@ if not df.empty:
         st.warning(f"⚠️ {selected_date} 해당 시간대에 데이터가 없습니다.")
     else:
         # --- [Tab 1] 데이터 상세 ---
-        if selected_tab == "📈 데이터 상세":
+        if selected_tab == "📈 시간대별 그래프":
             total_posts = filtered_df['작성글수'].sum()
             total_comments = filtered_df['작성댓글수'].sum()
             active_users = len(filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']))
@@ -263,7 +258,7 @@ if not df.empty:
             col3.metric("👥 액티브 유저", f"{active_users:,}명")
             
             st.markdown("---")
-            st.subheader("📊 시간대별 활동 그래프")
+            st.subheader("각 시간대 데이터")
 
             trend_stats = df.groupby('수집시간')[['작성글수', '작성댓글수']].sum().reset_index()
             trend_users = df.groupby(['수집시간', '닉네임', 'ID(IP)', '유저타입']).size().reset_index().groupby('수집시간').size().reset_index(name='액티브수')
@@ -281,14 +276,13 @@ if not df.empty:
             else:
                 chart_data = visible_data.melt('수집시간', var_name='활동유형', value_name='카운트')
                 chart = create_fixed_chart(chart_data)
-                # [차트] width="stretch" 적용
                 st.altair_chart(chart, width="stretch", key=f"main_chart_{selected_date}_{start_hour}_{end_hour}")
 
 
         # --- [Tab 2] 유저 랭킹 ---
         elif selected_tab == "🏆 유저 랭킹":
-            st.subheader("🔥 Top 20")
-            st.caption("👇 특정 유저의 상세 활동을 보려면 행(체크박스)을 클릭하세요.")
+            st.subheader("Top 20")
+            st.caption("✅ 특정 유저의 상세 활동을 보려면 행(체크박스)을 클릭하세요.")
 
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             
@@ -299,7 +293,6 @@ if not df.empty:
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
             top_users = top_users.rename(columns={'유저타입': '계정타입'})
             
-            # [표] use_container_width=True 유지 (블랙스크린 방지)
             event = st.dataframe(
                 top_users,
                 width='stretch',
@@ -309,7 +302,6 @@ if not df.empty:
                 key="ranking_native_grid"
             )
 
-            # 클릭 이벤트 감지 
             selection = event.selection
             selected_rows = selection.get("rows", []) if isinstance(selection, dict) else getattr(selection, "rows", [])
 
@@ -326,8 +318,8 @@ if not df.empty:
 
         # --- [Tab 3] 유저 검색 ---
         elif selected_tab == "👥 유저 검색":
-            st.subheader("🔍 유저 검색 및 전체 목록")
-            st.caption("👇 특정 유저의 상세 활동을 보려면 행(체크박스)을 클릭하세요.")
+            st.subheader("유저 검색 및 전체 목록")
+            st.caption("✅ 특정 유저의 상세 활동을 보려면 행(체크박스)을 클릭하세요.")
 
             user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({
                 '작성글수': 'sum',
@@ -366,7 +358,6 @@ if not df.empty:
                 display_columns = ['닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수']
                 page_df = page_df[display_columns]
 
-                # [표] use_container_width=True 유지 (블랙스크린 방지)
                 event = st.dataframe(
                     page_df,
                     width='stretch',
@@ -376,7 +367,6 @@ if not df.empty:
                     key="search_native_grid"
                 )
 
-                # 클릭 이벤트 감지
                 selection = event.selection
                 selected_rows = selection.get("rows", []) if isinstance(selection, dict) else getattr(selection, "rows", [])
 

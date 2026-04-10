@@ -67,7 +67,7 @@ def setup_oracle_wallet():
             
     return wallet_dir
 
-@st.cache_data(ttl=300, show_spinner=False) # 캐시 1시간(3600초)으로 연장
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_data_from_oracle():
     try:
         wallet_dir = setup_oracle_wallet()

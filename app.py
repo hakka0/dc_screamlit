@@ -303,7 +303,7 @@ if not df.empty:
             top_users = top_users.rename(columns={'유저타입': '계정타입'})
             event = st.dataframe(
                 top_users,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 on_select="rerun",          # 행을 클릭하면 즉시 반응
                 selection_mode="single-row", # 한 줄만 선택 가능
@@ -365,7 +365,7 @@ if not df.empty:
                 page_df = page_df[display_columns]
                 event = st.dataframe(
                     page_df,
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                     on_select="rerun",
                     selection_mode="single-row",

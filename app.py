@@ -100,6 +100,7 @@ def load_data_from_oracle():
         """
         
         with connection.cursor() as cursor:
+            cursor.arraysize = 10000
             
             cursor.execute(query, [cutoff_str])
             columns = [col[0] for col in cursor.description]

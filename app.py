@@ -302,7 +302,7 @@ if not df.empty:
             # [표] use_container_width=True 유지 (블랙스크린 방지)
             event = st.dataframe(
                 top_users,
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
                 on_select="rerun",
                 selection_mode="single-row",
@@ -369,7 +369,7 @@ if not df.empty:
                 # [표] use_container_width=True 유지 (블랙스크린 방지)
                 event = st.dataframe(
                     page_df,
-                    use_container_width=True,
+                    width='stretch',
                     hide_index=True,
                     on_select="rerun",
                     selection_mode="single-row",

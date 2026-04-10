@@ -48,7 +48,7 @@ st.markdown("""
 st_header_col, st_space, st_date_col, st_time_col = st.columns([5, 1, 2, 3])
 
 with st_header_col:
-    st.title("📊 블루 아카이브 갤러리 대시보드")
+    st.title("블루 아카이브 갤러리 대시보드")
 
 
 # ==========================================
@@ -74,7 +74,7 @@ def setup_oracle_wallet():
             
     return wallet_dir
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_data_from_oracle():
     """오라클 DB에서 최근 14일치 데이터를 즉시 쿼리해옵니다."""
     try:

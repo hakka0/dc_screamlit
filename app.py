@@ -68,7 +68,7 @@ def setup_oracle_wallet():
             
     return wallet_dir
 
-@st.cache_data(ttl=3600, show_spinner=False) # 캐시 1시간(3600초)으로 연장
+@st.cache_data(ttl=300, show_spinner=False) # 캐시 1시간(3600초)으로 연장
 def load_data_from_oracle():
     """오라클 DB에서 최근 14일치 데이터를 즉시 쿼리해옵니다."""
     try:

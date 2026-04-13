@@ -2,13 +2,22 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 import random
+import extra_streamlit_components as stx
 from datetime import datetime, time, timedelta
+
 
 # 오라클 DB 및 지갑 해독용 라이브러리
 import oracledb
 import base64
 import os
 import zipfile
+
+# [앱 설정 직후, 쿠키 매니저 초기화]
+cookie_manager = stx.CookieManager()
+
+# 브라우저 쿠키에서 북마크 목록 불러오기 (문자열을 리스트로 변환)
+bookmarks_str = cookie_manager.get(cookie="user_bookmarks")
+bookmark_list = bookmarks_str.split(",") if bookmarks_str else []
 
 # --- 페이지 기본 설정 ---
 st.set_page_config(page_title="ProjectMX Dashboard", layout="wide")
@@ -198,6 +207,23 @@ def create_fixed_chart(chart_data, title_prefix=""):
 # --- 유저 상세 정보 모달 ---
 @st.dialog("👤 개인 그래프")
 def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
+    is_bookmarked = nick in bookmark_list
+    
+    col1, col2 = st.columns([0.8, 0.2])
+    with col1:
+        st.subheader(f"[{account_type}] {nick} 님의 활동내역")
+    with col2:
+        if st.button("🌟 해제" if is_bookmarked else "⭐ 북마크", key=f"bm_{nick}"):
+            if is_bookmarked:
+                bookmark_list.remove(nick)
+            else:
+                bookmark_list.append(nick)
+            
+            # 변경된 리스트를 다시 문자열로 묶어서 쿠키에 영구 저장!
+            cookie_manager.set("user_bookmarks", ",".join(bookmark_list))
+            st.rerun() # 화면 새로고침하여 즉시 반영
+    st.divider()
+    
     st.subheader(f"{nick} ({user_type})")
     st.caption(f"ID(IP): {user_id} | 기준일: {target_date}")
 

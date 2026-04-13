@@ -5,19 +5,22 @@ import random
 import extra_streamlit_components as stx
 from datetime import datetime, time, timedelta
 
-
 # 오라클 DB 및 지갑 해독용 라이브러리
 import oracledb
 import base64
 import os
 import zipfile
 
-# [앱 설정 직후, 쿠키 매니저 초기화]
+# [수정 1] 쿠키 매니저 초기화 및 세션 스테이트(st.session_state) 동기화
 cookie_manager = stx.CookieManager()
 
-# 브라우저 쿠키에서 북마크 목록 불러오기 (문자열을 리스트로 변환)
-bookmarks_str = cookie_manager.get(cookie="user_bookmarks")
-bookmark_list = bookmarks_str.split(",") if bookmarks_str else []
+# 아직 세션 메모리에 북마크가 없다면, 쿠키에서 불러와서 세션에 저장합니다.
+if "bookmarks" not in st.session_state:
+    saved_bookmarks = cookie_manager.get(cookie="user_bookmarks")
+    if saved_bookmarks:
+        st.session_state.bookmarks = [b for b in saved_bookmarks.split(",") if b.strip()]
+    else:
+        st.session_state.bookmarks = []
 
 # --- 페이지 기본 설정 ---
 st.set_page_config(page_title="ProjectMX Dashboard", layout="wide")
@@ -207,20 +210,21 @@ def create_fixed_chart(chart_data, title_prefix=""):
 # --- 유저 상세 정보 모달 ---
 @st.dialog("👤 개인 그래프")
 def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
-    is_bookmarked = nick in bookmark_list
+    # [수정 2] 모달창에서 세션 스테이트(st.session_state) 참조
+    is_bookmarked = nick in st.session_state.bookmarks
     
     col1, col2 = st.columns([0.8, 0.2])
     with col1:
-        st.subheader(f"[{account_type}] {nick} 님의 활동내역")
+        st.subheader(f"[{user_type}] {nick} 님의 활동내역")
     with col2:
         if st.button("🌟 해제" if is_bookmarked else "⭐ 북마크", key=f"bm_{nick}"):
             if is_bookmarked:
-                bookmark_list.remove(nick)
+                st.session_state.bookmarks.remove(nick)
             else:
-                bookmark_list.append(nick)
+                st.session_state.bookmarks.append(nick)
             
-            # 변경된 리스트를 다시 문자열로 묶어서 쿠키에 영구 저장!
-            cookie_manager.set("user_bookmarks", ",".join(bookmark_list))
+            # 변경된 리스트를 다시 문자열로 묶어서 쿠키에 백업!
+            cookie_manager.set("user_bookmarks", ",".join(st.session_state.bookmarks))
             st.rerun() # 화면 새로고침하여 즉시 반영
     st.divider()
     
@@ -338,13 +342,13 @@ if not df.empty:
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
             top_users = top_users.rename(columns={'유저타입': '계정타입'})
             
-            # 1. 북마크 열을 만들고, 북마크된 사람에게만 '🌟' 표시
-            top_users['북마크'] = top_users['닉네임'].apply(lambda x: '🌟' if x in bookmark_list else '')
+            # [수정 3] 세션 스테이트 참조하여 북마크 열 생성
+            top_users['북마크'] = top_users['닉네임'].apply(lambda x: '🌟' if x in st.session_state.bookmarks else '')
             
-            # 2. 북마크가 있는 사람(🌟)을 최우선으로 위로 올리고, 그다음 총활동수 기준으로 정렬
+            # 북마크가 있는 사람(🌟)을 최우선으로 위로 올리고, 그다음 총활동수 기준으로 정렬
             top_users = top_users.sort_values(by=['북마크', '총활동수'], ascending=[False, False])
             
-            # 3. 표에서 '북마크' 열이 맨 왼쪽으로 오도록 열 순서 재배치
+            # 표에서 '북마크' 열이 맨 왼쪽으로 오도록 열 순서 재배치
             cols = ['북마크'] + [c for c in top_users.columns if c != '북마크']
             top_users = top_users[cols]
             
@@ -354,7 +358,7 @@ if not df.empty:
                 hide_index=True,
                 on_select="rerun",
                 selection_mode="single-row",
-                key="ranking_native_grid"
+                key="ranking_native_grid_v4" # 버그 꼬임 방지를 위해 v4로 키 업데이트
             )
 
             selection = event.selection
@@ -410,7 +414,12 @@ if not df.empty:
                 st.info("검색 결과가 없습니다.")
             else:
                 page_df = target_df.rename(columns={'유저타입': '계정타입'})
-                display_columns = ['닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수']
+                
+                # [수정 4] 유저 검색 탭에도 동일하게 북마크(🌟) 상단 고정 로직 추가!
+                page_df['북마크'] = page_df['닉네임'].apply(lambda x: '🌟' if x in st.session_state.bookmarks else '')
+                page_df = page_df.sort_values(by=['북마크', '총활동수'], ascending=[False, False])
+
+                display_columns = ['북마크', '닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수']
                 page_df = page_df[display_columns]
 
                 event = st.dataframe(
@@ -419,7 +428,7 @@ if not df.empty:
                     hide_index=True,
                     on_select="rerun",
                     selection_mode="single-row",
-                    key="search_native_grid"
+                    key="search_native_grid_v4" # 버그 꼬임 방지를 위해 v4로 키 업데이트
                 )
 
                 selection = event.selection

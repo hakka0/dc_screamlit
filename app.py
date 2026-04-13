@@ -361,7 +361,7 @@ if not df.empty:
             # st.data_editor로 교체하여 체크박스 활성화
             event = st.data_editor(
                 top_users,
-                width='stretch',
+                use_container_width=True,
                 hide_index=True,
                 column_config={
                     "북마크": st.column_config.CheckboxColumn("⭐ 북마크", help="클릭하여 상단 고정", default=False)
@@ -460,7 +460,7 @@ if not df.empty:
                 # st.data_editor로 교체하여 체크박스 활성화
                 event = st.data_editor(
                     page_df,
-                    width='stretch',
+                    use_container_width=True,
                     hide_index=True,
                     column_config={
                         "북마크": st.column_config.CheckboxColumn("⭐ 북마크", default=False)

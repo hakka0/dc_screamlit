@@ -39,6 +39,25 @@ st.markdown("""
             font-weight: bold;
         }
         div[data-testid="stSelectbox"] > div > div { min-height: 46px; }
+        div[data-testid="stRadio"] > div[role="radiogroup"] {
+            flex-wrap: nowrap !important;
+            gap: 5px !important;
+        }
+        
+        div[data-testid="stRadio"] > div[role="radiogroup"] > label {
+            flex: 1 1 33.3% !important;
+            justify-content: center !important;
+            padding: 10px 5px !important;
+        }
+        
+        @media (max-width: 450px) {
+            div[data-testid="stRadio"] > div[role="radiogroup"] > label p {
+                font-size: 13px !important;
+                letter-spacing: -0.5px !important;
+                word-break: keep-all !important;
+            }
+        }
+        
     </style>
 """, unsafe_allow_html=True)
 

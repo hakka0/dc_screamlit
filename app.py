@@ -11,7 +11,9 @@ import base64
 import os
 import zipfile
 
-# [수정 1] 쿠키 매니저 초기화 및 세션 스테이트(st.session_state) 동기화
+# ==========================================
+# 쿠키 매니저 초기화 및 세션 스테이트(st.session_state) 동기화
+# ==========================================
 cookie_manager = stx.CookieManager()
 
 # 아직 세션 메모리에 북마크가 없다면, 쿠키에서 불러와서 세션에 저장합니다.
@@ -25,7 +27,7 @@ if "bookmarks" not in st.session_state:
 # --- 페이지 기본 설정 ---
 st.set_page_config(page_title="ProjectMX Dashboard", layout="wide")
 
-# --- CSS 주입 ---
+# --- CSS 주입 (모바일 UI 최적화 포함) ---
 st.markdown("""
     <style>
         [data-testid="stElementToolbar"] { display: none; }
@@ -51,6 +53,8 @@ st.markdown("""
             font-weight: bold;
         }
         div[data-testid="stSelectbox"] > div > div { min-height: 46px; }
+        
+        /* 모바일 UI 1줄 3등분 강제 고정 */
         div[data-testid="stRadio"] > div[role="radiogroup"] {
             flex-wrap: nowrap !important;
             gap: 5px !important;
@@ -69,7 +73,6 @@ st.markdown("""
                 word-break: keep-all !important;
             }
         }
-        
     </style>
 """, unsafe_allow_html=True)
 
@@ -123,6 +126,7 @@ def load_data_from_oracle():
         """
         
         with connection.cursor() as cursor:
+            # 네트워크 통신 횟수 100배 단축 (로딩 속도 비약적 상승)
             cursor.arraysize = 10000
             cursor.execute(query, [cutoff_str])
             columns = [col[0] for col in cursor.description]
@@ -210,22 +214,20 @@ def create_fixed_chart(chart_data, title_prefix=""):
 # --- 유저 상세 정보 모달 ---
 @st.dialog("👤 개인 그래프")
 def show_user_detail_modal(nick, user_id, user_type, raw_df, target_date):
-    # [수정 2] 모달창에서 세션 스테이트(st.session_state) 참조
     is_bookmarked = nick in st.session_state.bookmarks
     
     col1, col2 = st.columns([0.8, 0.2])
     with col1:
         st.subheader(f"[{user_type}] {nick} 님의 활동내역")
     with col2:
-        if st.button("🌟 해제" if is_bookmarked else "⭐ 북마크", key=f"bm_{nick}"):
+        if st.button("🌟 해제" if is_bookmarked else "⭐ 북마크", key=f"bm_modal_{nick}"):
             if is_bookmarked:
                 st.session_state.bookmarks.remove(nick)
             else:
                 st.session_state.bookmarks.append(nick)
             
-            # 변경된 리스트를 다시 문자열로 묶어서 쿠키에 백업!
             cookie_manager.set("user_bookmarks", ",".join(st.session_state.bookmarks))
-            st.rerun() # 화면 새로고침하여 즉시 반영
+            st.rerun() 
     st.divider()
     
     st.subheader(f"{nick} ({user_type})")
@@ -295,7 +297,9 @@ if not df.empty:
     if filtered_df.empty:
         st.warning(f"⚠️ {selected_date} 해당 시간대에 데이터가 없습니다.")
     else:
-        # --- [Tab 1] 데이터 상세 ---
+        # ==========================================
+        # [Tab 1] 시간대 그래프
+        # ==========================================
         if selected_tab == "📈 시간대 그래프":
             total_posts = filtered_df['작성글수'].sum()
             total_comments = filtered_df['작성댓글수'].sum()
@@ -328,10 +332,12 @@ if not df.empty:
                 st.altair_chart(chart, width="stretch", key=f"main_chart_{selected_date}_{start_hour}_{end_hour}")
 
 
-        # --- [Tab 2] 유저 랭킹 ---
+        # ==========================================
+        # [Tab 2] 유저 랭킹
+        # ==========================================
         elif selected_tab == "🏆 유저 랭킹":
             st.subheader("Top 20")
-            st.caption("✅ 체크박스를 눌러 북마크하거나, 행을 클릭해 상세 활동을 확인하세요.")
+            st.caption("✅ 맨 앞의 체크박스를 눌러 북마크하거나, 행을 클릭해 상세 그래프를 확인하세요.")
 
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             
@@ -341,27 +347,33 @@ if not df.empty:
 
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
             top_users = top_users.rename(columns={'유저타입': '계정타입'})
+            
+            # 북마크 열을 True/False 상태로 설정
             top_users['북마크'] = top_users['닉네임'].apply(lambda x: True if x in st.session_state.bookmarks else False)
             
             # 북마크된 사람(True)이 최우선으로 오도록 정렬
             top_users = top_users.sort_values(by=['북마크', '총활동수'], ascending=[False, False])
             
+            # 표에서 '북마크' 열이 맨 왼쪽으로 오도록 열 순서 재배치
             cols = ['북마크'] + [c for c in top_users.columns if c != '북마크']
             top_users = top_users[cols]
+            
+            # st.data_editor로 교체하여 체크박스 활성화
             event = st.data_editor(
                 top_users,
                 width='stretch',
                 hide_index=True,
                 column_config={
-                    # 북마크 열을 실제 '체크박스 UI'로 강제 변환
-                    "북마크": st.column_config.CheckboxColumn("⭐ 북마크", help="클릭하여 북마크 지정/해제", default=False)
+                    "북마크": st.column_config.CheckboxColumn("⭐ 북마크", help="클릭하여 상단 고정", default=False)
                 },
                 disabled=[c for c in top_users.columns if c != '북마크'], # 북마크 열 빼고는 모두 수정 불가
                 on_select="rerun",
                 selection_mode="single-row",
-                key="ranking_editor_v1"
+                key="ranking_editor_final"
             )
-            editor_state = st.session_state.get("ranking_editor_v1", {})
+
+            # 1. 체크박스 수정(북마크 변경) 이벤트 감지
+            editor_state = st.session_state.get("ranking_editor_final", {})
             edited_rows = editor_state.get("edited_rows", {})
             
             if edited_rows:
@@ -372,14 +384,17 @@ if not df.empty:
                         if idx < len(top_users):
                             clicked_nick = top_users.iloc[idx]['닉네임']
                             
+                            # 체크했으면 세션에 추가, 체크 해제했으면 제거
                             if is_checked and clicked_nick not in st.session_state.bookmarks:
                                 st.session_state.bookmarks.append(clicked_nick)
                             elif not is_checked and clicked_nick in st.session_state.bookmarks:
                                 st.session_state.bookmarks.remove(clicked_nick)
                 
+                # 변경 사항을 쿠키에 즉시 저장하고 새로고침하여 재정렬
                 cookie_manager.set("user_bookmarks", ",".join(st.session_state.bookmarks))
                 st.rerun()
 
+            # 2. 행 클릭 시 상세 모달창 띄우기 (인덱스 에러 방지 포함)
             selection = getattr(event, 'selection', event.get('selection', {})) if isinstance(event, dict) else getattr(event, 'selection', None)
             if not selection:
                 selection = editor_state.get("selection", {})
@@ -390,17 +405,15 @@ if not df.empty:
                 selected_index = selected_rows[0]
                 if selected_index < len(top_users): 
                     selected_row = top_users.iloc[selected_index]
+                    show_user_detail_modal(selected_row['닉네임'], selected_row['ID(IP)'], selected_row['계정타입'], df, selected_date)
                     
-                    nick = selected_row['닉네임']
-                    uid = selected_row['ID(IP)']
-                    account_type = selected_row['계정타입']
                     
-                    show_user_detail_modal(nick, uid, account_type, df, selected_date)
-                    
-        # --- [Tab 3] 유저 검색 ---
+        # ==========================================
+        # [Tab 3] 유저 검색
+        # ==========================================
         elif selected_tab == "👥 유저 검색":
             st.subheader("전체 유저 목록")
-            st.caption("✅ 특정 유저의 상세 활동을 보려면 행(체크박스)을 클릭하세요.")
+            st.caption("✅ 맨 앞의 체크박스를 눌러 북마크하거나, 행을 클릭해 상세 그래프를 확인하세요.")
 
             user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({
                 '작성글수': 'sum',
@@ -430,14 +443,21 @@ if not df.empty:
 
             target_df = user_list_df
             if search_query:
-                target_df = target_df[target_df['닉네임'] == search_query] if search_type == "닉네임" 
-            else target_df[target_df['ID(IP)'] == search_query]
+                target_df = target_df[target_df['닉네임'] == search_query] if search_type == "닉네임" else target_df[target_df['ID(IP)'] == search_query]
+
+            if target_df.empty:
+                st.info("검색 결과가 없습니다.")
+            else:
                 page_df = target_df.rename(columns={'유저타입': '계정타입'})
+                
+                # 검색 탭도 Boolean(True/False)로 북마크 상태 표시
                 page_df['북마크'] = page_df['닉네임'].apply(lambda x: True if x in st.session_state.bookmarks else False)
                 page_df = page_df.sort_values(by=['북마크', '총활동수'], ascending=[False, False])
 
                 display_columns = ['북마크', '닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수']
                 page_df = page_df[display_columns]
+
+                # st.data_editor로 교체하여 체크박스 활성화
                 event = st.data_editor(
                     page_df,
                     width='stretch',
@@ -448,9 +468,11 @@ if not df.empty:
                     disabled=[c for c in page_df.columns if c != '북마크'],
                     on_select="rerun",
                     selection_mode="single-row",
-                    key="search_editor_v1"
+                    key="search_editor_final"
                 )
-                editor_state = st.session_state.get("search_editor_v1", {})
+
+                # 1. 검색 탭 체크박스 클릭 이벤트 처리
+                editor_state = st.session_state.get("search_editor_final", {})
                 edited_rows = editor_state.get("edited_rows", {})
                 
                 if edited_rows:
@@ -469,6 +491,7 @@ if not df.empty:
                     cookie_manager.set("user_bookmarks", ",".join(st.session_state.bookmarks))
                     st.rerun()
 
+                # 2. 행 클릭 시 모달창 띄우기
                 selection = getattr(event, 'selection', event.get('selection', {})) if isinstance(event, dict) else getattr(event, 'selection', None)
                 if not selection:
                     selection = editor_state.get("selection", {})
@@ -479,12 +502,7 @@ if not df.empty:
                     selected_index = selected_rows[0]
                     if selected_index < len(page_df):
                         selected_row = page_df.iloc[selected_index]
-                        
-                        nick = selected_row['닉네임']
-                        uid = selected_row['ID(IP)']
-                        account_type = selected_row['계정타입']
-                        
-                        show_user_detail_modal(nick, uid, account_type, df, selected_date)
+                        show_user_detail_modal(selected_row['닉네임'], selected_row['ID(IP)'], selected_row['계정타입'], df, selected_date)
 
 else:
     st.info("데이터 로딩 중... (데이터가 없거나 DB 연결을 확인해주세요)")

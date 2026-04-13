@@ -375,7 +375,7 @@ if not df.empty:
                 hide_index=True,
                 column_config={
                     "북마크": st.column_config.CheckboxColumn("⭐", help="체크 시 배경이 노란색으로 변합니다.", default=False, width="small"),
-                    "📊 그래프보기": st.column_config.CheckboxColumn("📊", help="체크 시 모달 창이 열립니다.", default=False, width="small"),
+                    "그래프보기": st.column_config.CheckboxColumn("📊", help="체크 시 모달 창이 열립니다.", default=False, width="small"),
                     "닉네임": st.column_config.TextColumn("닉네임"),
                     "ID(IP)": st.column_config.TextColumn("ID(IP)"),
                     "계정타입": st.column_config.TextColumn("타입"),
@@ -383,7 +383,7 @@ if not df.empty:
                     "작성댓글수": st.column_config.NumberColumn("댓글"),
                     "총활동수": st.column_config.NumberColumn("총합")
                 },
-                disabled=[c for c in top_users.columns if c not in ['북마크', '📊 그래프보기']],
+                disabled=[c for c in top_users.columns if c not in ['북마크', '그래프보기']],
                 key=editor_key
             )
 

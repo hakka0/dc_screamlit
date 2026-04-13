@@ -349,14 +349,14 @@ if not df.empty:
             top_users = top_users.rename(columns={'유저타입': '계정타입'})
             
             # 1. 그래프 보기 버튼용 체크박스와 북마크 체크박스 추가
-            top_users.insert(0, '📊 그래프보기', False)
+            top_users.insert(0, '그래프보기', False)
             top_users['북마크'] = top_users['닉네임'].apply(lambda x: True if x in st.session_state.bookmarks else False)
             
             # 2. 정렬 후 인덱스 초기화 (에러 방지를 위한 필수 작업!)
             top_users = top_users.sort_values(by=['북마크', '총활동수'], ascending=[False, False]).reset_index(drop=True)
             
             # 열 순서 재배치
-            cols = ['북마크', '📊 그래프보기'] + [c for c in top_users.columns if c not in ['북마크', '📊 그래프보기']]
+            cols = ['북마크', '그래프보기'] + [c for c in top_users.columns if c not in ['북마크', '그래프보기']]
             top_users = top_users[cols]
             
             # 3. 🌟 노란색 하이라이트 스타일 함수
@@ -374,8 +374,8 @@ if not df.empty:
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "북마크": st.column_config.CheckboxColumn("⭐", help="체크 시 배경이 노란색으로 변합니다.", default=False, width="small"),
-                    "📊 그래프보기": st.column_config.CheckboxColumn("📊", help="체크 시 모달 창이 열립니다.", default=False, width="small"),
+                    "북마크": st.column_config.CheckboxColumn("⭐", help="즐겨찾기", default=False, width="small"),
+                    "그래프보기": st.column_config.CheckboxColumn("📊", help="개인 그래프 표시", default=False, width="small"),
                     "닉네임": st.column_config.TextColumn("닉네임", width="large"),
                     "ID(IP)": st.column_config.TextColumn("ID(IP)", width="large"),
                     "계정타입": st.column_config.TextColumn("타입", width="large"),
@@ -383,7 +383,7 @@ if not df.empty:
                     "작성댓글수": st.column_config.NumberColumn("댓글", width="large"),
                     "총활동수": st.column_config.NumberColumn("총합", width="large")
                 },
-                disabled=[c for c in top_users.columns if c not in ['북마크', '📊 그래프보기']],
+                disabled=[c for c in top_users.columns if c not in ['북마크', '그래프보기']],
                 key=editor_key
             )
 
@@ -411,7 +411,7 @@ if not df.empty:
                             st.rerun()
 
                         # [이벤트 B] 📊 그래프 보기 체크 (모달 띄우기)
-                        if "📊 그래프보기" in changes and changes["📊 그래프보기"] == True:
+                        if "그래프보기" in changes and changes["그래프보기"] == True:
                             show_user_detail_modal(clicked_nick, uid, account_type, df, selected_date)
                     
                     
@@ -457,13 +457,13 @@ if not df.empty:
                 page_df = target_df.rename(columns={'유저타입': '계정타입'})
                 
                 # 1. 📊 열 추가 및 북마크 설정
-                page_df.insert(0, '📊 그래프보기', False)
+                page_df.insert(0, '그래프보기', False)
                 page_df['북마크'] = page_df['닉네임'].apply(lambda x: True if x in st.session_state.bookmarks else False)
                 
                 # 2. 정렬 후 인덱스 초기화 (필수)
                 page_df = page_df.sort_values(by=['북마크', '총활동수'], ascending=[False, False]).reset_index(drop=True)
 
-                display_columns = ['북마크', '📊 그래프보기', '닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수']
+                display_columns = ['북마크', '그래프보기', '닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수']
                 page_df = page_df[display_columns]
 
                 # 3. 🌟 노란색 하이라이트 스타일 함수
@@ -482,7 +482,7 @@ if not df.empty:
                     hide_index=True,
                     column_config={
                         "북마크": st.column_config.CheckboxColumn("⭐", help="체크 시 배경이 노란색으로 변합니다.", default=False, width="small"),
-                        "📊 그래프보기": st.column_config.CheckboxColumn("📊", help="체크 시 모달 창이 열립니다.", default=False, width="small"),
+                        "그래프보기": st.column_config.CheckboxColumn("📊", help="체크 시 모달 창이 열립니다.", default=False, width="small"),
                         "닉네임": st.column_config.TextColumn("닉네임", width="large"),
                         "ID(IP)": st.column_config.TextColumn("ID(IP)", width="large"),
                         "계정타입": st.column_config.TextColumn("타입", width="large"),
@@ -490,7 +490,7 @@ if not df.empty:
                         "작성댓글수": st.column_config.NumberColumn("댓글", width="large"),
                         "총활동수": st.column_config.NumberColumn("총합", width="large")
                     },
-                    disabled=[c for c in page_df.columns if c not in ['북마크', '📊 그래프보기']],
+                    disabled=[c for c in page_df.columns if c not in ['북마크', '그래프보기']],
                     key=editor_key
                 )
 
@@ -518,7 +518,7 @@ if not df.empty:
                                 st.rerun()
 
                             # [이벤트 B] 📊 그래프 보기 체크
-                            if "📊 그래프보기" in changes and changes["📊 그래프보기"] == True:
+                            if "그래프보기" in changes and changes["그래프보기"] == True:
                                 show_user_detail_modal(clicked_nick, uid, account_type, df, selected_date)
 
 else:

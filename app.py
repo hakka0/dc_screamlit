@@ -374,9 +374,15 @@ if not df.empty:
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                        "📊 그래프보기": st.column_config.CheckboxColumn("📊", help="체크 시 모달 창이 열립니다.", default=False, width=40),
-                        "북마크": st.column_config.CheckboxColumn("⭐", help="체크 시 배경이 노란색으로 변합니다.", default=False, width=40)
-                    },
+                    "북마크": st.column_config.CheckboxColumn("⭐", help="체크 시 배경이 노란색으로 변합니다.", default=False, width="small"),
+                    "📊 그래프보기": st.column_config.CheckboxColumn("📊", help="체크 시 모달 창이 열립니다.", default=False, width="small"),
+                    "닉네임": st.column_config.TextColumn("닉네임", width="large"),
+                    "ID(IP)": st.column_config.TextColumn("ID(IP)", width="large"),
+                    "계정타입": st.column_config.TextColumn("타입", width="large"),
+                    "작성글수": st.column_config.NumberColumn("글", width="large"),
+                    "작성댓글수": st.column_config.NumberColumn("댓글", width="large"),
+                    "총활동수": st.column_config.NumberColumn("총합", width="large")
+                },
                 disabled=[c for c in top_users.columns if c not in ['북마크', '📊 그래프보기']],
                 key=editor_key
             )
@@ -475,8 +481,14 @@ if not df.empty:
                     use_container_width=True,
                     hide_index=True,
                     column_config={
-                        "📊 그래프보기": st.column_config.CheckboxColumn("📊", help="체크 시 모달 창이 열립니다.", default=False, width=40),
-                        "북마크": st.column_config.CheckboxColumn("⭐", help="체크 시 배경이 노란색으로 변합니다.", default=False, width=40)
+                        "북마크": st.column_config.CheckboxColumn("⭐", help="체크 시 배경이 노란색으로 변합니다.", default=False, width="small"),
+                        "📊 그래프보기": st.column_config.CheckboxColumn("📊", help="체크 시 모달 창이 열립니다.", default=False, width="small"),
+                        "닉네임": st.column_config.TextColumn("닉네임", width="large"),
+                        "ID(IP)": st.column_config.TextColumn("ID(IP)", width="large"),
+                        "계정타입": st.column_config.TextColumn("타입", width="large"),
+                        "작성글수": st.column_config.NumberColumn("글", width="large"),
+                        "작성댓글수": st.column_config.NumberColumn("댓글", width="large"),
+                        "총활동수": st.column_config.NumberColumn("총합", width="large")
                     },
                     disabled=[c for c in page_df.columns if c not in ['북마크', '📊 그래프보기']],
                     key=editor_key

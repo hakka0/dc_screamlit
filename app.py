@@ -282,7 +282,7 @@ if not df.empty:
     st.markdown("---")
 
     selected_tab = st.radio(
-        "메뉴 선택", ["📈 시간대별 그래프", "🏆 유저 랭킹", "👥 유저 검색"],
+        "메뉴 선택", ["📈 시간대 그래프", "🏆 유저 랭킹", "👥 유저 검색"],
         horizontal=True, key="main_menu", label_visibility="collapsed"
     )
     
@@ -292,7 +292,7 @@ if not df.empty:
         st.warning(f"⚠️ {selected_date} 해당 시간대에 데이터가 없습니다.")
     else:
         # --- [Tab 1] 데이터 상세 ---
-        if selected_tab == "📈 시간대별 그래프":
+        if selected_tab == "📈 시간대 그래프":
             total_posts = filtered_df['작성글수'].sum()
             total_comments = filtered_df['작성댓글수'].sum()
             active_users = len(filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']))

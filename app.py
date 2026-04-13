@@ -368,22 +368,22 @@ if not df.empty:
             styled_top_users = top_users.style.apply(highlight_yellow, axis=1)
 
             # 4. 에러 주범(on_select) 완전 삭제 및 data_editor 렌더링
-            editor_key = "ranking_editor_v7"
+            editor_key = "ranking_editor_v8"
             st.data_editor(
                 styled_top_users,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "북마크": st.column_config.CheckboxColumn("⭐", help="즐겨찾기", default=False, width="small"),
-                    "그래프보기": st.column_config.CheckboxColumn("📊", help="개인 그래프 표시", default=False, width="small"),
-                    "닉네임": st.column_config.TextColumn("닉네임", width="large"),
-                    "ID(IP)": st.column_config.TextColumn("ID(IP)", width="large"),
-                    "계정타입": st.column_config.TextColumn("타입", width="large"),
-                    "작성글수": st.column_config.NumberColumn("글", width="large"),
-                    "작성댓글수": st.column_config.NumberColumn("댓글", width="large"),
-                    "총활동수": st.column_config.NumberColumn("총합", width="large")
+                    "북마크": st.column_config.CheckboxColumn("⭐", help="체크 시 배경이 노란색으로 변합니다.", default=False, width="small"),
+                    "📊 그래프보기": st.column_config.CheckboxColumn("📊", help="체크 시 모달 창이 열립니다.", default=False, width="small"),
+                    "닉네임": st.column_config.TextColumn("닉네임"),
+                    "ID(IP)": st.column_config.TextColumn("ID(IP)"),
+                    "계정타입": st.column_config.TextColumn("타입"),
+                    "작성글수": st.column_config.NumberColumn("글"),
+                    "작성댓글수": st.column_config.NumberColumn("댓글"),
+                    "총활동수": st.column_config.NumberColumn("총합")
                 },
-                disabled=[c for c in top_users.columns if c not in ['북마크', '그래프보기']],
+                disabled=[c for c in top_users.columns if c not in ['북마크', '📊 그래프보기']],
                 key=editor_key
             )
 
@@ -460,8 +460,10 @@ if not df.empty:
                 page_df.insert(0, '그래프보기', False)
                 page_df['북마크'] = page_df['닉네임'].apply(lambda x: True if x in st.session_state.bookmarks else False)
                 
-                # 2. 정렬 후 인덱스 초기화 (필수)
-                page_df = page_df.sort_values(by=['북마크', '총활동수'], ascending=[False, False]).reset_index(drop=True)
+                # ==========================================
+                # [수정] 북마크 최우선, 그다음 '닉네임' 기준(가나다순)으로 정렬!
+                # ==========================================
+                page_df = page_df.sort_values(by=['북마크', '닉네임'], ascending=[False, True]).reset_index(drop=True)
 
                 display_columns = ['북마크', '그래프보기', '닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수']
                 page_df = page_df[display_columns]
@@ -475,20 +477,23 @@ if not df.empty:
                 styled_page_df = page_df.style.apply(highlight_yellow_search, axis=1)
 
                 # 4. 에러 주범(on_select) 완전 삭제 및 data_editor 렌더링
-                editor_key = "search_editor_v7"
+                editor_key = "search_editor_v8"
                 st.data_editor(
                     styled_page_df,
                     use_container_width=True,
                     hide_index=True,
                     column_config={
+                        # 1. 체크박스는 'small'로 최소화
                         "북마크": st.column_config.CheckboxColumn("⭐", help="체크 시 배경이 노란색으로 변합니다.", default=False, width="small"),
                         "그래프보기": st.column_config.CheckboxColumn("📊", help="체크 시 모달 창이 열립니다.", default=False, width="small"),
-                        "닉네임": st.column_config.TextColumn("닉네임", width="large"),
-                        "ID(IP)": st.column_config.TextColumn("ID(IP)", width="large"),
-                        "계정타입": st.column_config.TextColumn("타입", width="large"),
-                        "작성글수": st.column_config.NumberColumn("글", width="large"),
-                        "작성댓글수": st.column_config.NumberColumn("댓글", width="large"),
-                        "총활동수": st.column_config.NumberColumn("총합", width="large")
+                        
+                        # 2. 강제 너비(width) 설정을 제거하여 화면에 자동으로 딱 맞게 분배!
+                        "닉네임": st.column_config.TextColumn("닉네임"),
+                        "ID(IP)": st.column_config.TextColumn("ID(IP)"),
+                        "계정타입": st.column_config.TextColumn("타입"),
+                        "작성글수": st.column_config.NumberColumn("글"),
+                        "작성댓글수": st.column_config.NumberColumn("댓글"),
+                        "총활동수": st.column_config.NumberColumn("총합")
                     },
                     disabled=[c for c in page_df.columns if c not in ['북마크', '그래프보기']],
                     key=editor_key

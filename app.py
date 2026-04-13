@@ -337,7 +337,7 @@ if not df.empty:
         # ==========================================
         elif selected_tab == "🏆 유저 랭킹":
             st.subheader("Top 20")
-            st.caption("✅ 맨 앞의 체크박스를 눌러 북마크하거나, 행을 클릭해 상세 📊 그래프를 확인하세요.")
+            st.caption("✅ 북마크를 체크하면 상단 고정 및 노란색으로 강조됩니다. 📊 그래프 열을 체크해 상세 활동을 보세요.")
 
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             
@@ -348,14 +348,18 @@ if not df.empty:
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
             top_users = top_users.rename(columns={'유저타입': '계정타입'})
             
-            top_users.insert(0, '그래프', '📊 보기')
+            # 1. 그래프 보기 버튼용 체크박스와 북마크 체크박스 추가
+            top_users.insert(0, '📊 그래프보기', False)
             top_users['북마크'] = top_users['닉네임'].apply(lambda x: True if x in st.session_state.bookmarks else False)
             
-            top_users = top_users.sort_values(by=['북마크', '총활동수'], ascending=[False, False])
+            # 2. 정렬 후 인덱스 초기화 (에러 방지를 위한 필수 작업!)
+            top_users = top_users.sort_values(by=['북마크', '총활동수'], ascending=[False, False]).reset_index(drop=True)
             
-            cols = ['북마크', '그래프'] + [c for c in top_users.columns if c not in ['북마크', '그래프']]
+            # 열 순서 재배치
+            cols = ['북마크', '📊 그래프보기'] + [c for c in top_users.columns if c not in ['북마크', '📊 그래프보기']]
             top_users = top_users[cols]
             
+            # 3. 🌟 노란색 하이라이트 스타일 함수
             def highlight_yellow(row):
                 if row['북마크'] == True:
                     return ['background-color: #FFFACD'] * len(row)
@@ -363,47 +367,46 @@ if not df.empty:
             
             styled_top_users = top_users.style.apply(highlight_yellow, axis=1)
 
-            editor_key = "ranking_editor_v6"
+            # 4. 에러 주범(on_select) 완전 삭제 및 data_editor 렌더링
+            editor_key = "ranking_editor_v7"
             st.data_editor(
                 styled_top_users,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "그래프": st.column_config.TextColumn("상세", width="small"),
-                    "북마크": st.column_config.CheckboxColumn("⭐ 북마크", default=False)
+                    "📊 그래프보기": st.column_config.CheckboxColumn("📊 그래프", help="체크 시 모달 창이 열립니다.", default=False),
+                    "북마크": st.column_config.CheckboxColumn("⭐ 북마크", help="체크 시 배경이 노란색으로 변합니다.", default=False)
                 },
-                disabled=[c for c in top_users.columns if c != '북마크'],
-                on_select="rerun",
-                selection_mode="single-row",
+                disabled=[c for c in top_users.columns if c not in ['북마크', '📊 그래프보기']],
                 key=editor_key
             )
 
+            # 5. 체크박스 클릭 이벤트 완벽 감지
             state = st.session_state.get(editor_key, {})
-
             edited_rows = state.get("edited_rows", {})
+
             if edited_rows:
                 for str_idx, changes in edited_rows.items():
-                    if "북마크" in changes:
-                        idx = int(str_idx)
-                        if idx < len(top_users):
-                            clicked_nick = top_users.iloc[idx]['닉네임']
+                    idx = int(str_idx)
+                    if idx < len(top_users):
+                        clicked_nick = top_users.iloc[idx]['닉네임']
+                        uid = top_users.iloc[idx]['ID(IP)']
+                        account_type = top_users.iloc[idx]['계정타입']
+
+                        # [이벤트 A] 북마크 체크/해제
+                        if "북마크" in changes:
                             is_checked = changes["북마크"]
-                            
                             if is_checked and clicked_nick not in st.session_state.bookmarks:
                                 st.session_state.bookmarks.append(clicked_nick)
                             elif not is_checked and clicked_nick in st.session_state.bookmarks:
                                 st.session_state.bookmarks.remove(clicked_nick)
-                
-                cookie_manager.set("user_bookmarks", ",".join(st.session_state.bookmarks))
-                st.rerun()
+                            
+                            cookie_manager.set("user_bookmarks", ",".join(st.session_state.bookmarks))
+                            st.rerun()
 
-            selection = state.get("selection", {})
-            selected_rows = selection.get("rows", [])
-            if len(selected_rows) > 0:
-                idx = selected_rows[0]
-                if idx < len(top_users): 
-                    selected_row = top_users.iloc[idx]
-                    show_user_detail_modal(selected_row['닉네임'], selected_row['ID(IP)'], selected_row['계정타입'], df, selected_date)
+                        # [이벤트 B] 📊 그래프 보기 체크 (모달 띄우기)
+                        if "📊 그래프보기" in changes and changes["📊 그래프보기"] == True:
+                            show_user_detail_modal(clicked_nick, uid, account_type, df, selected_date)
                     
                     
         # ==========================================
@@ -411,7 +414,7 @@ if not df.empty:
         # ==========================================
         elif selected_tab == "👥 유저 검색":
             st.subheader("전체 유저 목록")
-            st.caption("✅ 맨 앞의 체크박스를 눌러 북마크하거나, 행을 클릭해 상세 📊 그래프를 확인하세요.")
+            st.caption("✅ 북마크를 체크하면 상단 고정 및 노란색으로 강조됩니다. 📊 그래프 열을 체크해 상세 활동을 보세요.")
 
             user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({
                 '작성글수': 'sum',
@@ -446,13 +449,18 @@ if not df.empty:
                 st.info("검색 결과가 없습니다.")
             else:
                 page_df = target_df.rename(columns={'유저타입': '계정타입'})
-                page_df.insert(0, '그래프', '📊 보기')
+                
+                # 1. 📊 열 추가 및 북마크 설정
+                page_df.insert(0, '📊 그래프보기', False)
                 page_df['북마크'] = page_df['닉네임'].apply(lambda x: True if x in st.session_state.bookmarks else False)
-                page_df = page_df.sort_values(by=['북마크', '총활동수'], ascending=[False, False])
+                
+                # 2. 정렬 후 인덱스 초기화 (필수)
+                page_df = page_df.sort_values(by=['북마크', '총활동수'], ascending=[False, False]).reset_index(drop=True)
 
-                display_columns = ['북마크', '그래프', '닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수']
+                display_columns = ['북마크', '📊 그래프보기', '닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수']
                 page_df = page_df[display_columns]
 
+                # 3. 🌟 노란색 하이라이트 스타일 함수
                 def highlight_yellow_search(row):
                     if row['북마크'] == True:
                         return ['background-color: #FFFACD'] * len(row)
@@ -460,47 +468,46 @@ if not df.empty:
                 
                 styled_page_df = page_df.style.apply(highlight_yellow_search, axis=1)
 
-                editor_key = "search_editor_v6"
+                # 4. 에러 주범(on_select) 완전 삭제 및 data_editor 렌더링
+                editor_key = "search_editor_v7"
                 st.data_editor(
                     styled_page_df,
                     use_container_width=True,
                     hide_index=True,
                     column_config={
-                        "그래프": st.column_config.TextColumn("상세", width="small"),
-                        "북마크": st.column_config.CheckboxColumn("⭐ 북마크", default=False)
+                        "📊 그래프보기": st.column_config.CheckboxColumn("📊 그래프", help="체크 시 모달 창이 열립니다.", default=False),
+                        "북마크": st.column_config.CheckboxColumn("⭐ 북마크", help="체크 시 배경이 노란색으로 변합니다.", default=False)
                     },
-                    disabled=[c for c in page_df.columns if c != '북마크'],
-                    on_select="rerun",
-                    selection_mode="single-row",
+                    disabled=[c for c in page_df.columns if c not in ['북마크', '📊 그래프보기']],
                     key=editor_key
                 )
 
+                # 5. 체크박스 클릭 이벤트 완벽 감지
                 state = st.session_state.get(editor_key, {})
-
                 edited_rows = state.get("edited_rows", {})
+
                 if edited_rows:
                     for str_idx, changes in edited_rows.items():
-                        if "북마크" in changes:
-                            idx = int(str_idx)
-                            if idx < len(page_df):
-                                clicked_nick = page_df.iloc[idx]['닉네임']
+                        idx = int(str_idx)
+                        if idx < len(page_df):
+                            clicked_nick = page_df.iloc[idx]['닉네임']
+                            uid = page_df.iloc[idx]['ID(IP)']
+                            account_type = page_df.iloc[idx]['계정타입']
+
+                            # [이벤트 A] 북마크 체크/해제
+                            if "북마크" in changes:
                                 is_checked = changes["북마크"]
-                                
                                 if is_checked and clicked_nick not in st.session_state.bookmarks:
                                     st.session_state.bookmarks.append(clicked_nick)
                                 elif not is_checked and clicked_nick in st.session_state.bookmarks:
                                     st.session_state.bookmarks.remove(clicked_nick)
-                    
-                    cookie_manager.set("user_bookmarks", ",".join(st.session_state.bookmarks))
-                    st.rerun()
+                                
+                                cookie_manager.set("user_bookmarks", ",".join(st.session_state.bookmarks))
+                                st.rerun()
 
-                selection = state.get("selection", {})
-                selected_rows = selection.get("rows", [])
-                if len(selected_rows) > 0:
-                    idx = selected_rows[0]
-                    if idx < len(page_df):
-                        selected_row = page_df.iloc[idx]
-                        show_user_detail_modal(selected_row['닉네임'], selected_row['ID(IP)'], selected_row['계정타입'], df, selected_date)
+                            # [이벤트 B] 📊 그래프 보기 체크
+                            if "📊 그래프보기" in changes and changes["📊 그래프보기"] == True:
+                                show_user_detail_modal(clicked_nick, uid, account_type, df, selected_date)
 
 else:
     st.info("데이터 로딩 중... (데이터가 없거나 DB 연결을 확인해주세요)")

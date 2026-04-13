@@ -338,6 +338,16 @@ if not df.empty:
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
             top_users = top_users.rename(columns={'유저타입': '계정타입'})
             
+            # 1. 북마크 열을 만들고, 북마크된 사람에게만 '🌟' 표시
+            top_users['북마크'] = top_users['닉네임'].apply(lambda x: '🌟' if x in bookmark_list else '')
+            
+            # 2. 북마크가 있는 사람(🌟)을 최우선으로 위로 올리고, 그다음 총활동수 기준으로 정렬
+            top_users = top_users.sort_values(by=['북마크', '총활동수'], ascending=[False, False])
+            
+            # 3. 표에서 '북마크' 열이 맨 왼쪽으로 오도록 열 순서 재배치
+            cols = ['북마크'] + [c for c in top_users.columns if c != '북마크']
+            top_users = top_users[cols]
+            
             event = st.dataframe(
                 top_users,
                 width='stretch',

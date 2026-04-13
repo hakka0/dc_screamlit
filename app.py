@@ -374,9 +374,9 @@ if not df.empty:
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "📊 그래프보기": st.column_config.CheckboxColumn("📊", help="체크 시 모달 창이 열립니다.", default=False, width="small"),
-                    "북마크": st.column_config.CheckboxColumn("⭐", help="체크 시 배경이 노란색으로 변합니다.", default=False, width="small")
-                },
+                        "📊 그래프보기": st.column_config.CheckboxColumn("📊", help="체크 시 모달 창이 열립니다.", default=False, width=40),
+                        "북마크": st.column_config.CheckboxColumn("⭐", help="체크 시 배경이 노란색으로 변합니다.", default=False, width=40)
+                    },
                 disabled=[c for c in top_users.columns if c not in ['북마크', '📊 그래프보기']],
                 key=editor_key
             )
@@ -475,8 +475,8 @@ if not df.empty:
                     use_container_width=True,
                     hide_index=True,
                     column_config={
-                        "📊 그래프보기": st.column_config.CheckboxColumn("📊", help="체크 시 모달 창이 열립니다.", default=False, width="small"),
-                        "북마크": st.column_config.CheckboxColumn("⭐", help="체크 시 배경이 노란색으로 변합니다.", default=False, width="small")
+                        "📊 그래프보기": st.column_config.CheckboxColumn("📊", help="체크 시 모달 창이 열립니다.", default=False, width=40),
+                        "북마크": st.column_config.CheckboxColumn("⭐", help="체크 시 배경이 노란색으로 변합니다.", default=False, width=40)
                     },
                     disabled=[c for c in page_df.columns if c not in ['북마크', '📊 그래프보기']],
                     key=editor_key

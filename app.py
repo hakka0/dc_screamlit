@@ -374,8 +374,9 @@ if not df.empty:
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "북마크": st.column_config.CheckboxColumn("⭐", help="체크 시 배경이 노란색으로 변합니다.", default=False, width="small"),
-                    "그래프보기": st.column_config.CheckboxColumn("📊", help="체크 시 모달 창이 열립니다.", default=False, width="small"),
+                    "북마크": st.column_config.CheckboxColumn("⭐", help="체크 시 배경이 노란색으로 변합니다.", default=False),
+                    "그래프보기": st.column_config.CheckboxColumn("📊", help="체크 시 모달 창이 열립니다.", default=False),
+                    
                     "닉네임": st.column_config.TextColumn("닉네임"),
                     "ID(IP)": st.column_config.TextColumn("ID(IP)"),
                     "계정타입": st.column_config.TextColumn("타입"),
@@ -483,11 +484,8 @@ if not df.empty:
                     use_container_width=True,
                     hide_index=True,
                     column_config={
-                        # 1. 체크박스는 'small'로 최소화
-                        "북마크": st.column_config.CheckboxColumn("⭐", help="체크 시 배경이 노란색으로 변합니다.", default=False, width="small"),
-                        "그래프보기": st.column_config.CheckboxColumn("📊", help="체크 시 모달 창이 열립니다.", default=False, width="small"),
-                        
-                        # 2. 강제 너비(width) 설정을 제거하여 화면에 자동으로 딱 맞게 분배!
+                        "북마크": st.column_config.CheckboxColumn("⭐", help="체크 시 배경이 노란색으로 변합니다.", default=False),
+                        "그래프보기": st.column_config.CheckboxColumn("📊", help="체크 시 모달 창이 열립니다.", default=False),
                         "닉네임": st.column_config.TextColumn("닉네임"),
                         "ID(IP)": st.column_config.TextColumn("ID(IP)"),
                         "계정타입": st.column_config.TextColumn("타입"),

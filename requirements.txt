@@ -5,3 +5,4 @@ openpyxl
 plotly
 streamlit-aggrid
 oracledb
+extra-streamlit-components

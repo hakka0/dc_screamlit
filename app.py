@@ -362,15 +362,15 @@ if not df.empty:
 
             if len(selected_rows) > 0:
                 selected_index = selected_rows[0]
-                selected_row = top_users.iloc[selected_index]
-                
-                nick = selected_row['닉네임']
-                uid = selected_row['ID(IP)']
-                account_type = selected_row['계정타입']
-                
-                show_user_detail_modal(nick, uid, account_type, df, selected_date)
-
-
+                if selected_index < len(top_users): 
+                    selected_row = top_users.iloc[selected_index]
+                    
+                    nick = selected_row['닉네임']
+                    uid = selected_row['ID(IP)']
+                    account_type = selected_row['계정타입']
+                    
+                    show_user_detail_modal(nick, uid, account_type, df, selected_date)
+                    
         # --- [Tab 3] 유저 검색 ---
         elif selected_tab == "👥 유저 검색":
             st.subheader("전체 유저 목록")
@@ -427,13 +427,14 @@ if not df.empty:
 
                 if len(selected_rows) > 0:
                     selected_index = selected_rows[0]
-                    selected_row = page_df.iloc[selected_index]
-                    
-                    nick = selected_row['닉네임']
-                    uid = selected_row['ID(IP)']
-                    account_type = selected_row['계정타입']
-                    
-                    show_user_detail_modal(nick, uid, account_type, df, selected_date)
+                    if selected_index < len(page_df):
+                        selected_row = page_df.iloc[selected_index]
+                        
+                        nick = selected_row['닉네임']
+                        uid = selected_row['ID(IP)']
+                        account_type = selected_row['계정타입']
+                        
+                        show_user_detail_modal(nick, uid, account_type, df, selected_date)
 
 else:
     st.info("데이터 로딩 중... (데이터가 없거나 DB 연결을 확인해주세요)")

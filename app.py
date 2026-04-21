@@ -65,7 +65,7 @@ st.markdown("""
         @media (max-width: 450px) {
             div[data-testid="stRadio"] > div[role="radiogroup"] > label p {
                 font-size: 11.5px !important;
-                letter-spacing: -0.5px !important;
+                letter-spacing: 0px !important;
                 white-space: nowrap !important;
             }
         }

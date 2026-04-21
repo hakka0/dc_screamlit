@@ -54,7 +54,12 @@ st.markdown("""
         div[data-testid="stRadio"] > div[role="radiogroup"] > label {
             flex: 1 1 33.3% !important;
             justify-content: center !important;
-            padding: 10px 2px !important;
+            padding: 10px 5px !important;
+        }
+        
+        div[data-testid="stRadio"] > div[role="radiogroup"] > label p {
+            white-space: nowrap !important;
+            margin: 0 !important;
         }
         
         @media (max-width: 450px) {

@@ -5,18 +5,12 @@ import random
 import extra_streamlit_components as stx
 from datetime import datetime, time, timedelta
 
-# 오라클 DB 및 지갑 해독용 라이브러리
 import oracledb
 import base64
 import os
 import zipfile
-
-# ==========================================
-# 쿠키 매니저 초기화 및 세션 스테이트(st.session_state) 동기화
-# ==========================================
 cookie_manager = stx.CookieManager()
 
-# 아직 세션 메모리에 북마크가 없다면, 쿠키에서 불러와서 세션에 저장합니다.
 if "bookmarks" not in st.session_state:
     saved_bookmarks = cookie_manager.get(cookie="user_bookmarks")
     if saved_bookmarks:
@@ -24,10 +18,8 @@ if "bookmarks" not in st.session_state:
     else:
         st.session_state.bookmarks = []
 
-# --- 페이지 기본 설정 ---
 st.set_page_config(page_title="ProjectMX Dashboard", layout="wide")
 
-# --- CSS 주입 (모바일 UI 최적화 포함) ---
 st.markdown("""
     <style>
         [data-testid="stElementToolbar"] { display: none; }
@@ -54,7 +46,6 @@ st.markdown("""
         }
         div[data-testid="stSelectbox"] > div > div { min-height: 46px; }
         
-        /* 모바일 UI 1줄 3등분 강제 고정 */
         div[data-testid="stRadio"] > div[role="radiogroup"] {
             flex-wrap: nowrap !important;
             gap: 5px !important;
@@ -81,10 +72,6 @@ st_header_col, st_space, st_date_col, st_time_col = st.columns([5, 1, 2, 3])
 with st_header_col:
     st.title("블루 아카이브 갤러리 대시보드")
 
-
-# ==========================================
-# 오라클 DB 연동 파트
-# ==========================================
 @st.cache_resource
 def setup_oracle_wallet():
     wallet_dir = "/tmp/oracle_wallet"
@@ -126,8 +113,7 @@ def load_data_from_oracle():
         """
         
         with connection.cursor() as cursor:
-            # 네트워크 통신 횟수 100배 단축 (로딩 속도 비약적 상승)
-            cursor.arraysize = 10000
+            cursor.arraysize = 50000
             cursor.execute(query, [cutoff_str])
             columns = [col[0] for col in cursor.description]
             data = cursor.fetchall()
@@ -337,7 +323,7 @@ if not df.empty:
         # ==========================================
         elif selected_tab == "🏆 유저 랭킹":
             st.subheader("Top 20")
-            st.caption("✅ 북마크를 체크하면 상단 고정 및 노란색으로 강조됩니다. 📊 그래프 열을 체크해 상세 활동을 보세요.")
+            st.caption("✅ 북마크 , 📊 개인용 그래프")
 
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             
@@ -348,18 +334,14 @@ if not df.empty:
             top_users = ranking_df.sort_values(by='총활동수', ascending=False).head(20)
             top_users = top_users.rename(columns={'유저타입': '계정타입'})
             
-            # 1. 그래프 보기 버튼용 체크박스와 북마크 체크박스 추가
             top_users.insert(0, '그래프보기', False)
             top_users['북마크'] = top_users['닉네임'].apply(lambda x: True if x in st.session_state.bookmarks else False)
             
-            # 2. 정렬 후 인덱스 초기화 (에러 방지를 위한 필수 작업!)
             top_users = top_users.sort_values(by=['북마크', '총활동수'], ascending=[False, False]).reset_index(drop=True)
             
-            # 열 순서 재배치
             cols = ['북마크', '그래프보기'] + [c for c in top_users.columns if c not in ['북마크', '그래프보기']]
             top_users = top_users[cols]
             
-            # 3. 🌟 노란색 하이라이트 스타일 함수
             def highlight_yellow(row):
                 if row['북마크'] == True:
                     return ['background-color: #FFFACD'] * len(row)
@@ -367,7 +349,6 @@ if not df.empty:
             
             styled_top_users = top_users.style.apply(highlight_yellow, axis=1)
 
-            # 4. 에러 주범(on_select) 완전 삭제 및 data_editor 렌더링
             editor_key = "ranking_editor_v8"
             st.data_editor(
                 styled_top_users,
@@ -388,7 +369,6 @@ if not df.empty:
                 key=editor_key
             )
 
-            # 5. 체크박스 클릭 이벤트 완벽 감지
             state = st.session_state.get(editor_key, {})
             edited_rows = state.get("edited_rows", {})
 
@@ -400,7 +380,6 @@ if not df.empty:
                         uid = top_users.iloc[idx]['ID(IP)']
                         account_type = top_users.iloc[idx]['계정타입']
 
-                        # [이벤트 A] 북마크 체크/해제
                         if "북마크" in changes:
                             is_checked = changes["북마크"]
                             if is_checked and clicked_nick not in st.session_state.bookmarks:
@@ -411,7 +390,6 @@ if not df.empty:
                             cookie_manager.set("user_bookmarks", ",".join(st.session_state.bookmarks))
                             st.rerun()
 
-                        # [이벤트 B] 📊 그래프 보기 체크 (모달 띄우기)
                         if "그래프보기" in changes and changes["그래프보기"] == True:
                             show_user_detail_modal(clicked_nick, uid, account_type, df, selected_date)
                     
@@ -421,7 +399,7 @@ if not df.empty:
         # ==========================================
         elif selected_tab == "👥 유저 검색":
             st.subheader("전체 유저 목록")
-            st.caption("✅ 북마크를 체크하면 상단 고정 및 노란색으로 강조됩니다. 📊 그래프 열을 체크해 상세 활동을 보세요.")
+            st.caption("✅ 북마크 , 📊 개인용 그래프")
 
             user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({
                 '작성글수': 'sum',
@@ -457,19 +435,13 @@ if not df.empty:
             else:
                 page_df = target_df.rename(columns={'유저타입': '계정타입'})
                 
-                # 1. 📊 열 추가 및 북마크 설정
                 page_df.insert(0, '그래프보기', False)
                 page_df['북마크'] = page_df['닉네임'].apply(lambda x: True if x in st.session_state.bookmarks else False)
-                
-                # ==========================================
-                # [수정] 북마크 최우선, 그다음 '닉네임' 기준(가나다순)으로 정렬!
-                # ==========================================
                 page_df = page_df.sort_values(by=['북마크', '닉네임'], ascending=[False, True]).reset_index(drop=True)
 
                 display_columns = ['북마크', '그래프보기', '닉네임', 'ID(IP)', '계정타입', '작성글수', '작성댓글수', '총활동수']
                 page_df = page_df[display_columns]
 
-                # 3. 🌟 노란색 하이라이트 스타일 함수
                 def highlight_yellow_search(row):
                     if row['북마크'] == True:
                         return ['background-color: #FFFACD'] * len(row)
@@ -477,7 +449,6 @@ if not df.empty:
                 
                 styled_page_df = page_df.style.apply(highlight_yellow_search, axis=1)
 
-                # 4. 에러 주범(on_select) 완전 삭제 및 data_editor 렌더링
                 editor_key = "search_editor_v8"
                 st.data_editor(
                     styled_page_df,
@@ -497,7 +468,6 @@ if not df.empty:
                     key=editor_key
                 )
 
-                # 5. 체크박스 클릭 이벤트 완벽 감지
                 state = st.session_state.get(editor_key, {})
                 edited_rows = state.get("edited_rows", {})
 
@@ -508,8 +478,6 @@ if not df.empty:
                             clicked_nick = page_df.iloc[idx]['닉네임']
                             uid = page_df.iloc[idx]['ID(IP)']
                             account_type = page_df.iloc[idx]['계정타입']
-
-                            # [이벤트 A] 북마크 체크/해제
                             if "북마크" in changes:
                                 is_checked = changes["북마크"]
                                 if is_checked and clicked_nick not in st.session_state.bookmarks:

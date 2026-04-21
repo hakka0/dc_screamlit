@@ -59,7 +59,7 @@ st.markdown("""
         
         div[data-testid="stRadio"] > div[role="radiogroup"] {
             flex-wrap: nowrap !important;
-            gap: 5px !important;
+            gap: 10px !important;
         }
         
         div[data-testid="stRadio"] > div[role="radiogroup"] > label {

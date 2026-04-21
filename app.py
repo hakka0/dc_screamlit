@@ -27,13 +27,24 @@ st.markdown("""
         footer { visibility: hidden; }
         
         div[role="radiogroup"] label > div:first-child { display: none !important; }
+        
+        div[role="radiogroup"] label > div:last-child {
+            margin-left: 0 !important;
+            padding-left: 0 !important;
+            width: 100% !important;
+            display: flex !important;
+            justify-content: center !important;
+            align-items: center !important;
+        }
+        
         div[role="radiogroup"] label {
             background-color: #ffffff;
-            padding: 10px 20px !important;
+            padding: 10px 5px !important;
             border-radius: 8px !important;
             border: 1px solid #e0e0e0;
             margin-right: 10px;
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            justify-content: center !important;
         }
         div[role="radiogroup"] label:has(input:checked) {
             background-color: #333 !important;
@@ -53,13 +64,13 @@ st.markdown("""
         
         div[data-testid="stRadio"] > div[role="radiogroup"] > label {
             flex: 1 1 33.3% !important;
-            justify-content: center !important;
-            padding: 10px 5px !important;
+            display: flex !important;
         }
         
         div[data-testid="stRadio"] > div[role="radiogroup"] > label p {
             white-space: nowrap !important;
-            margin: 1 !important;
+            margin: 0 !important;
+            text-align: center !important;
         }
         
         @media (max-width: 450px) {

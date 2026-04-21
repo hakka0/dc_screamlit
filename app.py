@@ -54,14 +54,14 @@ st.markdown("""
         div[data-testid="stRadio"] > div[role="radiogroup"] > label {
             flex: 1 1 33.3% !important;
             justify-content: center !important;
-            padding: 10px 5px !important;
+            padding: 10px 2px !important;
         }
         
         @media (max-width: 450px) {
             div[data-testid="stRadio"] > div[role="radiogroup"] > label p {
-                font-size: 13px !important;
+                font-size: 11.5px !important;
                 letter-spacing: -0.5px !important;
-                word-break: keep-all !important;
+                white-space: nowrap !important;
             }
         }
     </style>
@@ -355,8 +355,8 @@ if not df.empty:
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "북마크": st.column_config.CheckboxColumn("⭐", help="체크 시 배경이 노란색으로 변합니다.", default=False),
-                    "그래프보기": st.column_config.CheckboxColumn("📊", help="체크 시 모달 창이 열립니다.", default=False),
+                    "북마크": st.column_config.CheckboxColumn("   ⭐", help="체크 시 배경이 노란색으로 변합니다.", default=False),
+                    "그래프보기": st.column_config.CheckboxColumn("   📊", help="체크 시 모달 창이 열립니다.", default=False),
                     
                     "닉네임": st.column_config.TextColumn("닉네임"),
                     "ID(IP)": st.column_config.TextColumn("ID(IP)"),

@@ -338,7 +338,7 @@ if not df.empty:
         # ==========================================
         elif selected_tab == "유저 랭킹":
             st.subheader("Top 20")
-            st.caption("✅ 북마크 , 📊 개인용 그래프")
+            st.caption("⭐ 북마크 , 📊 개인용 그래프")
 
             ranking_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입'])[['총활동수', '작성글수', '작성댓글수']].sum().reset_index()
             
@@ -370,8 +370,8 @@ if not df.empty:
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "북마크": st.column_config.CheckboxColumn("   ⭐", help="체크 시 배경이 노란색으로 변합니다.", default=False),
-                    "그래프보기": st.column_config.CheckboxColumn("   📊", help="체크 시 모달 창이 열립니다.", default=False),
+                    "북마크": st.column_config.CheckboxColumn("    ⭐", help="체크 시 배경이 노란색으로 변합니다.", default=False),
+                    "그래프보기": st.column_config.CheckboxColumn("    📊", help="체크 시 모달 창이 열립니다.", default=False),
                     
                     "닉네임": st.column_config.TextColumn("닉네임"),
                     "ID(IP)": st.column_config.TextColumn("ID(IP)"),
@@ -414,7 +414,7 @@ if not df.empty:
         # ==========================================
         elif selected_tab == "유저 검색":
             st.subheader("전체 유저 목록")
-            st.caption("✅ 북마크 , 📊 개인용 그래프")
+            st.caption("⭐ 북마크 , 📊 개인용 그래프")
 
             user_list_df = filtered_df.groupby(['닉네임', 'ID(IP)', '유저타입']).agg({
                 '작성글수': 'sum',
@@ -470,8 +470,8 @@ if not df.empty:
                     use_container_width=True,
                     hide_index=True,
                     column_config={
-                        "북마크": st.column_config.CheckboxColumn("⭐", help="체크 시 배경이 노란색으로 변합니다.", default=False),
-                        "그래프보기": st.column_config.CheckboxColumn("📊", help="체크 시 모달 창이 열립니다.", default=False),
+                        "북마크": st.column_config.CheckboxColumn("    ⭐", help="체크 시 배경이 노란색으로 변합니다.", default=False),
+                        "그래프보기": st.column_config.CheckboxColumn("    📊", help="체크 시 모달 창이 열립니다.", default=False),
                         "닉네임": st.column_config.TextColumn("닉네임"),
                         "ID(IP)": st.column_config.TextColumn("ID(IP)"),
                         "계정타입": st.column_config.TextColumn("타입"),
